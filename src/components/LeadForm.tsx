@@ -112,12 +112,19 @@ export const LeadForm = ({
     );
   }
 
+  const showContextBadge = Boolean(leadContext?.categoryTitle && !leadContext?.issueTitle);
+
   return (
-    <form className="contact-card" onSubmit={submit}>
+    <form className={`contact-card${compact ? " compact" : ""}`} onSubmit={submit}>
       <div>
         <h3>{siteContent.cta.formTitle}</h3>
         <p>{siteContent.cta.formSubtitle}</p>
       </div>
+      {showContextBadge ? (
+        <div className="form-context">
+          <span className="badge">{leadContext?.categoryTitle}</span>
+        </div>
+      ) : null}
       <div className="form-row">
         <label className="form-field">
           <span>Имя (необязательно)</span>
@@ -148,9 +155,15 @@ export const LeadForm = ({
         <input name="hp" type="text" autoComplete="off" />
       </label>
       {error ? <p className="form-note">{error}</p> : null}
-      <button className="button primary" type="submit" disabled={status === "loading"}>
-        {status === "loading" ? "Отправляю..." : siteContent.cta.request}
-      </button>
+      <div className="form-actions">
+        <button
+          className="button primary"
+          type="submit"
+          disabled={status === "loading"}
+        >
+          {status === "loading" ? "Отправляю..." : siteContent.cta.request}
+        </button>
+      </div>
       <p className="form-note">
         Нажимая кнопку, вы соглашаетесь на обработку обращения.
       </p>

@@ -8,6 +8,7 @@
   --accent: #f97316;
   --accent-dark: #ea580c;
   --accent-2: #2563eb;
+  --bottom-bar-height: 72px;
 }
 
 * {
@@ -19,7 +20,7 @@ body {
   font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
-  padding-bottom: 80px;
+  padding-bottom: 0;
 }
 
 a {
@@ -319,6 +320,18 @@ header {
   font-size: 16px;
 }
 
+.form-context {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.form-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
 .form-row {
   display: grid;
   gap: 12px;
@@ -336,7 +349,8 @@ header {
   right: 0;
   background: #fff;
   border-top: 1px solid var(--border);
-  padding: 10px 12px;
+  min-height: var(--bottom-bar-height);
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom, 0px));
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
@@ -347,14 +361,14 @@ header {
   width: 100%;
   font-size: 14px;
   padding: 10px 8px;
+  border-radius: 14px;
+  box-shadow: none;
+  min-height: 44px;
 }
 
 @media (min-width: 900px) {
   .bottom-bar {
     display: none;
-  }
-  body {
-    padding-bottom: 0;
   }
 }
 
@@ -362,8 +376,9 @@ header {
   position: fixed;
   inset: 0;
   background: rgba(20, 20, 20, 0.5);
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 24px;
   z-index: 50;
 }
@@ -377,10 +392,24 @@ header {
   overflow: auto;
   display: grid;
   gap: 16px;
+  position: relative;
 }
 
 .modal h3 {
   margin: 0;
+}
+
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--muted);
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  cursor: pointer;
 }
 
 .badge-row {
@@ -427,5 +456,134 @@ header {
 
   .form-row {
     grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 899px) {
+  body {
+    padding-bottom: calc(var(--bottom-bar-height) + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (max-width: 480px) {
+  .header-inner {
+    padding: 8px 0;
+    gap: 10px;
+  }
+
+  .brand strong {
+    font-size: 16px;
+    line-height: 1.1;
+  }
+
+  .brand span {
+    font-size: 11px;
+    line-height: 1.1;
+  }
+
+  .header-cta {
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+
+  .header-cta .button {
+    padding: 8px 12px;
+    font-size: 13px;
+    min-height: 40px;
+    border-radius: 12px;
+    white-space: nowrap;
+  }
+
+  .section {
+    padding: 36px 0;
+  }
+
+  .hero h1 {
+    font-size: clamp(28px, 8vw, 36px);
+    line-height: 1.1;
+  }
+
+  .hero ul {
+    gap: 6px;
+    font-size: 14px;
+    line-height: 1.3;
+  }
+
+  .hero-card {
+    padding: 18px;
+    border-radius: 18px;
+  }
+
+  .badge-row {
+    gap: 6px;
+  }
+
+  .badge {
+    padding: 4px 8px;
+    font-size: 11px;
+  }
+
+  .trust-list {
+    gap: 10px;
+  }
+
+  .trust-item {
+    padding: 12px 14px;
+    font-size: 14px;
+  }
+
+  .card {
+    padding: 16px;
+    border-radius: 16px;
+  }
+
+  .contact-card {
+    padding: 18px;
+    border-radius: 18px;
+    gap: 12px;
+  }
+
+  .form-field input,
+  .form-field textarea {
+    padding: 10px 12px;
+    font-size: 15px;
+  }
+
+  .form-field input {
+    min-height: 44px;
+  }
+
+  .form-field textarea {
+    min-height: 96px;
+  }
+
+  .contact-card.compact {
+    padding: 18px;
+    gap: 12px;
+  }
+
+  .contact-card.compact .form-actions {
+    position: sticky;
+    bottom: calc(-1 * env(safe-area-inset-bottom, 0px));
+    background: #fff;
+    padding-bottom: calc(8px + env(safe-area-inset-bottom, 0px));
+    z-index: 2;
+  }
+
+  .modal-overlay {
+    align-items: flex-end;
+    padding: 12px 12px 0;
+  }
+
+  .modal {
+    width: 100%;
+    border-radius: 20px 20px 0 0;
+    max-height: 85vh;
+    padding: 20px 18px calc(18px + env(safe-area-inset-bottom, 0px));
+  }
+
+  .modal-close {
+    top: 10px;
+    right: 10px;
   }
 }

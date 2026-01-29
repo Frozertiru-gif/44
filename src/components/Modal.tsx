@@ -32,6 +32,9 @@ export const Modal = ({ open, title, onClose, children }: ModalProps) => {
         aria-label={title ?? "Окно"}
         onClick={(event) => event.stopPropagation()}
       >
+        <button className="modal-close" type="button" onClick={onClose} aria-label="Закрыть">
+          ✕
+        </button>
         {title ? <h3>{title}</h3> : null}
         {children}
       </div>

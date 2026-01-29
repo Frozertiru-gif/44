@@ -51,11 +51,8 @@ export default function Home() {
   );
 
   const presetMessage = useMemo(() => {
-    if (!leadContext?.categoryTitle) return "";
-    if (leadContext.issueTitle) {
-      return `Категория: ${leadContext.categoryTitle}. Проблема: ${leadContext.issueTitle}`;
-    }
-    return `Категория: ${leadContext.categoryTitle}`;
+    if (!leadContext?.issueTitle) return "";
+    return leadContext.issueTitle;
   }, [leadContext]);
 
   const handleToggleCategory = (id: IssueCategory["id"]) => {
@@ -87,7 +84,7 @@ export default function Home() {
             <a href="#reviews">Отзывы</a>
             <a href="#contacts">Контакты</a>
           </nav>
-          <div className="cta-row">
+          <div className="cta-row header-cta">
             <a className="button secondary" href={`tel:${siteContent.phone.tel}`}>
               {siteContent.cta.call}
             </a>

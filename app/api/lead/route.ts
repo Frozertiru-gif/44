@@ -70,17 +70,25 @@ const buildTelegramMessage = (lead: {
   phone: string;
   message: string | null;
   source: string;
+  categoryId?: string | null;
   categoryTitle?: string | null;
   issueTitle?: string | null;
 }) => {
+  const context =
+    lead.categoryTitle && lead.issueTitle
+      ? `${lead.categoryTitle} → ${lead.issueTitle}`
+      : lead.categoryTitle
+      ? lead.categoryTitle
+      : lead.issueTitle
+      ? lead.issueTitle
+      : null;
   const lines = [
     "<b>Новая заявка</b>",
     `Дата: ${lead.ts}`,
     lead.name ? `Имя: ${lead.name}` : null,
     `Телефон: ${lead.phone}`,
     lead.message ? `Что сломалось: ${lead.message}` : null,
-    lead.categoryTitle ? `Категория: ${lead.categoryTitle}` : null,
-    lead.issueTitle ? `Проблема: ${lead.issueTitle}` : null,
+    context ? `Контекст: ${context}` : null,
     `Источник: ${lead.source}`
   ].filter(Boolean);
 
@@ -139,6 +147,7 @@ export async function POST(req: Request) {
       phone,
       message: payload.message?.trim() || null,
       source: payload.source?.trim() || "unknown",
+      categoryId: payload.categoryId?.trim() || null,
       categoryTitle: payload.categoryTitle?.trim() || null,
       issueTitle: payload.issueTitle?.trim() || null
     };

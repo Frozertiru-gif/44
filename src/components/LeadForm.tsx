@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { track } from "@/src/lib/track";
 import { siteContent } from "@/src/content/site";
 
@@ -16,13 +16,30 @@ type LeadFormProps = {
   source: string;
   onSuccess?: () => void;
   compact?: boolean;
+  presetMessage?: string;
+  leadContext?: {
+    categoryId?: string;
+    categoryTitle?: string;
+    issueTitle?: string;
+  };
 };
 
-export const LeadForm = ({ source, onSuccess, compact }: LeadFormProps) => {
+export const LeadForm = ({
+  source,
+  onSuccess,
+  compact,
+  presetMessage,
+  leadContext
+}: LeadFormProps) => {
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">(
     "idle"
   );
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState(presetMessage ?? "");
+
+  useEffect(() => {
+    setMessage(presetMessage ?? "");
+  }, [presetMessage]);
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -32,9 +49,12 @@ export const LeadForm = ({ source, onSuccess, compact }: LeadFormProps) => {
     const payload = {
       name: String(formData.get("name") ?? "").trim(),
       phone: normalizePhone(String(formData.get("phone") ?? "").trim()),
-      message: String(formData.get("message") ?? "").trim(),
+      message: message.trim(),
       hp: String(formData.get("hp") ?? "").trim(),
-      source
+      source,
+      categoryId: leadContext?.categoryId,
+      categoryTitle: leadContext?.categoryTitle,
+      issueTitle: leadContext?.issueTitle
     };
 
     if (!payload.phone || !isValidPhone(payload.phone)) {
@@ -119,6 +139,8 @@ export const LeadForm = ({ source, onSuccess, compact }: LeadFormProps) => {
           name="message"
           rows={compact ? 3 : 4}
           placeholder="Например, не включается телевизор"
+          value={message}
+          onChange={(event) => setMessage(event.target.value)}
         />
       </label>
       <label style={{ display: "none" }}>

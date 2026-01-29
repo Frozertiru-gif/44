@@ -185,6 +185,11 @@ header {
   min-height: 170px;
 }
 
+.category-card.active {
+  border-color: rgba(37, 99, 235, 0.45);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.12);
+}
+
 .card h3 {
   margin: 0;
   font-size: 18px;
@@ -207,6 +212,26 @@ header {
   font-size: 14px;
   color: #b45309;
   font-weight: 600;
+}
+
+.issues-section {
+  padding-top: 32px;
+}
+
+.issues-cta {
+  margin-top: 24px;
+  background: #fff7ed;
+  border: 1px solid rgba(249, 115, 22, 0.35);
+  border-radius: 20px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.issues-cta h3 {
+  margin: 0 0 6px;
 }
 
 .highlight {
@@ -256,6 +281,28 @@ header {
   padding: 24px;
   display: grid;
   gap: 16px;
+}
+
+.contacts-container {
+  max-width: 1100px;
+}
+
+.contacts-grid {
+  display: grid;
+  gap: 20px;
+}
+
+.contact-info {
+  align-content: start;
+}
+
+.contact-actions {
+  gap: 10px;
+}
+
+.contact-actions .button {
+  padding: 10px 16px;
+  font-size: 15px;
 }
 
 .form-field {
@@ -365,6 +412,17 @@ header {
   .about {
     grid-template-columns: 1fr 1fr;
     align-items: center;
+  }
+
+  .issues-cta {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .contacts-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
   }
 
   .form-row {

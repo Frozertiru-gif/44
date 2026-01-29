@@ -38,6 +38,11 @@ export type SiteContent = {
     description: string;
   }[];
   issues: IssueCategory[];
+  issuesCta: {
+    title: string;
+    subtitle: string;
+    button: string;
+  };
   trust: string[];
   about: {
     title: string;
@@ -270,6 +275,11 @@ export const siteContent: SiteContent = {
       ]
     }
   ],
+  issuesCta: {
+    title: "Не уверены в причине? Лучше диагностика.",
+    subtitle: "Оставьте заявку — перезвоню и уточню детали.",
+    button: "Оставить заявку"
+  },
   trust: [
     "Приезжаю в день обращения",
     "Понятная цена до начала работ",

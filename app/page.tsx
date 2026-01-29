@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { IssueCategory, siteContent } from "@/src/content/site";
 import { LeadForm } from "@/src/components/LeadForm";
+import { MessengerButtons } from "@/src/components/MessengerButtons";
 import { Modal } from "@/src/components/Modal";
 import { CategoryGrid } from "@/src/components/CategoryGrid";
 import { IssuesSection } from "@/src/components/IssuesSection";
@@ -69,6 +70,7 @@ export default function Home() {
   };
 
   const contactBadges = [siteContent.city, ...siteContent.areas].slice(0, 3);
+  const masterInitial = siteContent.master.name.trim().charAt(0) || "А";
 
   return (
     <div>
@@ -104,7 +106,7 @@ export default function Home() {
       <main>
         <section className="section" id="hero">
           <div className="container hero">
-            <div>
+            <div className="hero-text">
               <h1>{siteContent.hero.title}</h1>
               <p>{siteContent.hero.subtitle}</p>
               <ul>
@@ -128,30 +130,27 @@ export default function Home() {
                 </button>
               </div>
             </div>
-            <div className="hero-card">
-              <div>
-                <h3>Работаю по {siteContent.city}</h3>
-                <p>{siteContent.serviceArea.title}</p>
-                {siteContent.serviceArea.subtitle ? (
-                  <p className="issue-meta">{siteContent.serviceArea.subtitle}</p>
+            <div className="hero-master">
+              <div className="hero-avatar">
+                {siteContent.master.photoUrl ? (
+                  <img src={siteContent.master.photoUrl} alt={siteContent.master.name} />
+                ) : (
+                  <span>{masterInitial}</span>
+                )}
+              </div>
+              <div className="hero-master-info">
+                <strong>{siteContent.master.name}</strong>
+                <span>{siteContent.master.subtitle}</span>
+                {siteContent.master.note ? (
+                  <span className="issue-meta">{siteContent.master.note}</span>
                 ) : null}
               </div>
-              <div className="badge-row">
+              <div className="badge-row hero-badges">
                 {contactBadges.map((badge) => (
                   <span className="badge" key={badge}>
                     {badge}
                   </span>
                 ))}
-              </div>
-              <div>
-                <p className="issue-meta">Режим работы</p>
-                <strong>{siteContent.workHours}</strong>
-              </div>
-              <div>
-                <p className="issue-meta">Телефон</p>
-                <a href={`tel:${siteContent.phone.tel}`}>
-                  {siteContent.phone.display}
-                </a>
               </div>
             </div>
           </div>
@@ -252,12 +251,7 @@ export default function Home() {
                   <a className="button primary" href={`tel:${siteContent.phone.tel}`}>
                     {siteContent.cta.call}
                   </a>
-                  <a className="button ghost" href={siteContent.messengers.whatsapp}>
-                    WhatsApp
-                  </a>
-                  <a className="button ghost" href={siteContent.messengers.telegram}>
-                    Telegram
-                  </a>
+                  <MessengerButtons />
                 </div>
               </div>
               <LeadForm
@@ -301,12 +295,7 @@ export default function Home() {
         <div>
           <p>Напишите в удобный мессенджер:</p>
           <div className="cta-row">
-            <a className="button primary" href={siteContent.messengers.whatsapp}>
-              WhatsApp
-            </a>
-            <a className="button ghost" href={siteContent.messengers.telegram}>
-              Telegram
-            </a>
+            <MessengerButtons buttonClassName="button ghost" />
           </div>
         </div>
       </Modal>

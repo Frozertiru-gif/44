@@ -3,14 +3,7 @@
 import { useEffect, useState } from "react";
 import { track } from "@/src/lib/track";
 import { siteContent } from "@/src/content/site";
-
-const normalizePhone = (value: string) => value.replace(/\s+/g, "");
-
-const isValidPhone = (value: string) => {
-  const cleaned = value.replace(/[^+\d]/g, "");
-  const digits = cleaned.replace(/\D/g, "");
-  return digits.length >= 7 && digits.length <= 15;
-};
+import { usePhoneField } from "@/src/components/usePhoneField";
 
 type LeadFormProps = {
   source: string;
@@ -34,8 +27,9 @@ export const LeadForm = ({
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">(
     "idle"
   );
-  const [error, setError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [message, setMessage] = useState(presetMessage ?? "");
+  const phoneField = usePhoneField();
 
   useEffect(() => {
     setMessage(presetMessage ?? "");
@@ -43,12 +37,13 @@ export const LeadForm = ({
 
   const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setError(null);
+    setFormError(null);
+    phoneField.markSubmitted();
     const form = event.currentTarget;
     const formData = new FormData(form);
     const payload = {
       name: String(formData.get("name") ?? "").trim(),
-      phone: normalizePhone(String(formData.get("phone") ?? "").trim()),
+      phone: phoneField.value.trim(),
       message: message.trim(),
       hp: String(formData.get("hp") ?? "").trim(),
       source,
@@ -57,8 +52,8 @@ export const LeadForm = ({
       issueTitle: leadContext?.issueTitle
     };
 
-    if (!payload.phone || !isValidPhone(payload.phone)) {
-      setError("Укажите корректный номер телефона.");
+    if (!phoneField.isValid) {
+      phoneField.focus();
       return;
     }
 
@@ -75,6 +70,7 @@ export const LeadForm = ({
         setStatus("success");
         track({ name: "lead_success", payload: { source } });
         form.reset();
+        phoneField.reset();
         onSuccess?.();
         return;
       }
@@ -83,11 +79,11 @@ export const LeadForm = ({
       const message = data?.code === "rate_limited"
         ? "Слишком часто. Попробуйте чуть позже."
         : "Не получилось отправить. Попробуйте ещё раз.";
-      setError(message);
+      setFormError(message);
       setStatus("error");
     } catch (err) {
       console.error(err);
-      setError("Не получилось отправить. Попробуйте ещё раз.");
+      setFormError("Не получилось отправить. Попробуйте ещё раз.");
       setStatus("error");
     }
   };
@@ -135,9 +131,18 @@ export const LeadForm = ({
           <input
             name="phone"
             type="tel"
-            placeholder="+7 900 000-00-00"
-            required
+            placeholder="+79XXXXXXXXX"
+            value={phoneField.value}
+            onChange={phoneField.handleChange}
+            onFocus={phoneField.handleFocus}
+            onBlur={phoneField.handleBlur}
+            onPaste={phoneField.handlePaste}
+            ref={phoneField.inputRef}
+            inputMode="tel"
+            autoComplete="tel"
+            aria-invalid={Boolean(phoneField.error)}
           />
+          {phoneField.error ? <span className="form-note">{phoneField.error}</span> : null}
         </label>
       </div>
       <label className="form-field">
@@ -154,12 +159,12 @@ export const LeadForm = ({
         <span>Не заполняйте</span>
         <input name="hp" type="text" autoComplete="off" />
       </label>
-      {error ? <p className="form-note">{error}</p> : null}
+      {formError ? <p className="form-note">{formError}</p> : null}
       <div className="form-actions">
         <button
           className="button primary"
           type="submit"
-          disabled={status === "loading"}
+          disabled={status === "loading" || !phoneField.isValid}
         >
           {status === "loading" ? "Отправляю..." : siteContent.cta.request}
         </button>

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
+import { isValidPhone, normalizePhone } from "@/src/lib/phone";
 
 const WINDOW_MS = 10 * 60 * 1000;
 const MAX_REQUESTS = 5;
@@ -29,13 +30,6 @@ const getIp = (req: Request) => {
     return forwarded.split(",")[0]?.trim();
   }
   return req.headers.get("x-real-ip") ?? "unknown";
-};
-
-const normalizePhone = (value: string) => value.replace(/[^+\d]/g, "");
-
-const isValidPhone = (value: string) => {
-  const digits = value.replace(/\D/g, "");
-  return digits.length >= 7 && digits.length <= 15;
 };
 
 const isRateLimited = (ip: string) => {

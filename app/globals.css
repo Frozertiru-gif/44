@@ -119,6 +119,13 @@ header {
   transform: translateY(-1px);
 }
 
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+  transform: none;
+  box-shadow: none;
+}
+
 .section {
   padding: 56px 0;
   scroll-margin-top: 90px;

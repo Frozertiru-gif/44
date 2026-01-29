@@ -131,7 +131,10 @@ export default function Home() {
             <div className="hero-card">
               <div>
                 <h3>Работаю по {siteContent.city}</h3>
-                <p>Выезжаю по районам: {siteContent.areas.join(", ")}</p>
+                <p>{siteContent.serviceArea.title}</p>
+                {siteContent.serviceArea.subtitle ? (
+                  <p className="issue-meta">{siteContent.serviceArea.subtitle}</p>
+                ) : null}
               </div>
               <div className="badge-row">
                 {contactBadges.map((badge) => (

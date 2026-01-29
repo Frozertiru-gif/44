@@ -27,6 +27,10 @@ export type SiteContent = {
   city: string;
   areas: string[];
   workHours: string;
+  serviceArea: {
+    title: string;
+    subtitle?: string;
+  };
   hero: {
     title: string;
     subtitle: string;
@@ -88,6 +92,10 @@ export const siteContent: SiteContent = {
   city,
   areas,
   workHours,
+  serviceArea: {
+    title: "Работаю по всем районам города и пригородам",
+    subtitle: "Центр · Север · Юг и ближайшие населённые пункты"
+  },
   hero: {
     title: "Ремонт техники на дому",
     subtitle: "Приезжаю быстро, объясняю простыми словами, ремонтирую без лишних услуг.",

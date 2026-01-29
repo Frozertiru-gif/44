@@ -21,8 +21,15 @@ export type SiteContent = {
     tel: string;
   };
   messengers: {
-    whatsapp: string;
-    telegram: string;
+    whatsappUrl: string;
+    telegramUrl: string;
+    maxUrl?: string;
+  };
+  master: {
+    name: string;
+    subtitle: string;
+    photoUrl?: string;
+    note?: string;
   };
   city: string;
   areas: string[];
@@ -71,6 +78,8 @@ const phoneDisplay = process.env.NEXT_PUBLIC_PHONE_DISPLAY ?? "+7 (900) 000-00-0
 const phoneTel = process.env.NEXT_PUBLIC_PHONE_TEL ?? "+79000000000";
 const whatsapp = process.env.NEXT_PUBLIC_WHATSAPP ?? "https://wa.me/79000000000";
 const telegram = process.env.NEXT_PUBLIC_TELEGRAM ?? "https://t.me/username";
+const maxUrl = process.env.NEXT_PUBLIC_MAX_URL ?? "";
+const masterPhotoUrl = process.env.NEXT_PUBLIC_MASTER_PHOTO_URL ?? "";
 const city = process.env.NEXT_PUBLIC_CITY ?? "Москва";
 const areasRaw = process.env.NEXT_PUBLIC_AREAS ?? "Центр,Север,Юг";
 const areas = areasRaw.split(",").map((area) => area.trim()).filter(Boolean);
@@ -86,8 +95,15 @@ export const siteContent: SiteContent = {
     tel: phoneTel
   },
   messengers: {
-    whatsapp,
-    telegram
+    whatsappUrl: whatsapp,
+    telegramUrl: telegram,
+    maxUrl: maxUrl || undefined
+  },
+  master: {
+    name: "Андрей",
+    subtitle: "Частный мастер",
+    photoUrl: masterPhotoUrl || undefined,
+    note: "Без колл-центров и посредников"
   },
   city,
   areas,
@@ -97,7 +113,7 @@ export const siteContent: SiteContent = {
     subtitle: "Центр · Север · Юг и ближайшие населённые пункты"
   },
   hero: {
-    title: "Ремонт техники на дому",
+    title: "Я частный мастер Андрей",
     subtitle: "Приезжаю быстро, объясняю простыми словами, ремонтирую без лишних услуг.",
     points: ["Диагностика по месту", "Честная цена до начала работ", "Гарантия на работу"]
   },

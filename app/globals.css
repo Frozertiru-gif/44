@@ -161,57 +161,13 @@ header {
   color: var(--muted);
 }
 
-.hero-master {
+.hero-card {
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: 20px;
-  padding: 20px;
+  padding: 24px;
   display: grid;
-  gap: 12px;
-  justify-items: center;
-  text-align: center;
-  justify-self: center;
-  max-width: 200px;
-}
-
-.hero-avatar {
-  width: clamp(72px, 12vw, 150px);
-  height: clamp(72px, 12vw, 150px);
-  border-radius: 20px;
-  border: 1px solid rgba(15, 23, 42, 0.08);
-  background: #f8fafc;
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  font-size: 32px;
-  font-weight: 700;
-  color: var(--text);
-}
-
-.hero-avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  display: block;
-}
-
-.hero-master-info {
-  display: grid;
-  gap: 4px;
-}
-
-.hero-master-info strong {
-  font-size: 18px;
-}
-
-.hero-master-info span {
-  color: var(--muted);
-  font-size: 14px;
-}
-
-.hero-badges {
-  justify-content: center;
+  gap: 16px;
 }
 
 .grid {
@@ -310,15 +266,46 @@ header {
   gap: 20px;
 }
 
-.photo-placeholder {
-  width: 100%;
-  aspect-ratio: 4 / 3;
-  border-radius: 24px;
-  border: 1px dashed var(--border);
+.about-master {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 18px 20px;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 16px;
+  align-items: center;
+}
+
+.about-avatar {
+  width: clamp(96px, 14vw, 150px);
+  height: clamp(96px, 14vw, 150px);
+  border-radius: 18px;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  background: #f8fafc;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
   display: grid;
   place-items: center;
-  color: var(--muted);
-  background: #fdfcf9;
+  overflow: hidden;
+  font-size: 32px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.about-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.about-master-info {
+  display: grid;
+  gap: 6px;
+}
+
+.about-master-info strong {
+  font-size: 18px;
 }
 
 .review {
@@ -489,13 +476,6 @@ header {
     grid-template-columns: 1.2fr 0.8fr;
   }
 
-  .hero-master {
-    justify-self: end;
-    justify-items: start;
-    text-align: left;
-    max-width: 260px;
-  }
-
   .about {
     grid-template-columns: 1fr 1fr;
     align-items: center;
@@ -567,9 +547,15 @@ header {
     line-height: 1.3;
   }
 
-  .hero-master {
-    padding: 16px;
+  .hero-card {
+    padding: 18px;
     border-radius: 18px;
+  }
+
+  .about-master {
+    grid-template-columns: 1fr;
+    justify-items: center;
+    text-align: center;
   }
 
   .badge-row {

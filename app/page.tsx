@@ -106,7 +106,7 @@ export default function Home() {
       <main>
         <section className="section" id="hero">
           <div className="container hero">
-            <div className="hero-text">
+            <div>
               <h1>{siteContent.hero.title}</h1>
               <p>{siteContent.hero.subtitle}</p>
               <ul>
@@ -130,27 +130,30 @@ export default function Home() {
                 </button>
               </div>
             </div>
-            <div className="hero-master">
-              <div className="hero-avatar">
-                {siteContent.master.photoUrl ? (
-                  <img src={siteContent.master.photoUrl} alt={siteContent.master.name} />
-                ) : (
-                  <span>{masterInitial}</span>
-                )}
-              </div>
-              <div className="hero-master-info">
-                <strong>{siteContent.master.name}</strong>
-                <span>{siteContent.master.subtitle}</span>
-                {siteContent.master.note ? (
-                  <span className="issue-meta">{siteContent.master.note}</span>
+            <div className="hero-card">
+              <div>
+                <h3>Работаю по {siteContent.city}</h3>
+                <p>{siteContent.serviceArea.title}</p>
+                {siteContent.serviceArea.subtitle ? (
+                  <p className="issue-meta">{siteContent.serviceArea.subtitle}</p>
                 ) : null}
               </div>
-              <div className="badge-row hero-badges">
+              <div className="badge-row">
                 {contactBadges.map((badge) => (
                   <span className="badge" key={badge}>
                     {badge}
                   </span>
                 ))}
+              </div>
+              <div>
+                <p className="issue-meta">Режим работы</p>
+                <strong>{siteContent.workHours}</strong>
+              </div>
+              <div>
+                <p className="issue-meta">Телефон</p>
+                <a href={`tel:${siteContent.phone.tel}`}>
+                  {siteContent.phone.display}
+                </a>
               </div>
             </div>
           </div>
@@ -213,7 +216,22 @@ export default function Home() {
                 </button>
               </div>
             </div>
-            <div className="photo-placeholder">Фото мастера (позже)</div>
+            <div className="about-master">
+              <div className="about-avatar">
+                {siteContent.master.photoUrl ? (
+                  <img src={siteContent.master.photoUrl} alt={siteContent.master.name} />
+                ) : (
+                  <span>{masterInitial}</span>
+                )}
+              </div>
+              <div className="about-master-info">
+                <strong>{siteContent.master.name}</strong>
+                <span>{siteContent.master.subtitle}</span>
+                {siteContent.master.note ? (
+                  <span className="issue-meta">{siteContent.master.note}</span>
+                ) : null}
+              </div>
+            </div>
           </div>
         </section>
 

@@ -1,25 +1,74 @@
 "use client";
 
-import { useState } from "react";
-import { siteContent } from "@/src/content/site";
+import { useEffect, useMemo, useState } from "react";
+import { IssueCategory, siteContent } from "@/src/content/site";
 import { LeadForm } from "@/src/components/LeadForm";
 import { Modal } from "@/src/components/Modal";
+import { CategoryGrid } from "@/src/components/CategoryGrid";
+import { IssuesSection } from "@/src/components/IssuesSection";
 import { track } from "@/src/lib/track";
 
-const highlightSection = (id: string) => {
-  const section = document.getElementById(id);
-  if (!section) return;
-  section.scrollIntoView({ behavior: "smooth", block: "start" });
-  section.classList.add("highlight");
-  window.setTimeout(() => section.classList.remove("highlight"), 1200);
+type LeadContext = {
+  categoryId?: IssueCategory["id"];
+  categoryTitle?: string;
+  issueTitle?: string;
+  source?: string;
 };
 
 export default function Home() {
   const [isFormOpen, setFormOpen] = useState(false);
   const [isMessengerOpen, setMessengerOpen] = useState(false);
+  const [activeCategoryId, setActiveCategoryId] = useState<IssueCategory["id"] | null>(null);
+  const [leadContext, setLeadContext] = useState<LeadContext | null>(null);
 
-  const handleTileClick = (id: string) => {
-    highlightSection(id);
+  useEffect(() => {
+    const hash = window.location.hash.replace("#", "");
+    if (hash && ["pc", "tv", "printer", "phone"].includes(hash)) {
+      setActiveCategoryId(hash as IssueCategory["id"]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!activeCategoryId) {
+      window.history.replaceState(
+        null,
+        "",
+        `${window.location.pathname}${window.location.search}`
+      );
+      return;
+    }
+    window.history.replaceState(null, "", `#${activeCategoryId}`);
+    const section = document.getElementById(activeCategoryId);
+    if (!section) return;
+    window.setTimeout(() => {
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 60);
+  }, [activeCategoryId]);
+
+  const activeCategory = useMemo(
+    () => siteContent.issues.find((group) => group.id === activeCategoryId) ?? null,
+    [activeCategoryId]
+  );
+
+  const presetMessage = useMemo(() => {
+    if (!leadContext?.categoryTitle) return "";
+    if (leadContext.issueTitle) {
+      return `Категория: ${leadContext.categoryTitle}. Проблема: ${leadContext.issueTitle}`;
+    }
+    return `Категория: ${leadContext.categoryTitle}`;
+  }, [leadContext]);
+
+  const handleToggleCategory = (id: IssueCategory["id"]) => {
+    setActiveCategoryId((current) => (current === id ? null : id));
+  };
+
+  const handleOpenForm = (context: LeadContext) => {
+    setLeadContext(context);
+    const section = document.getElementById("contacts");
+    if (section) {
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+    setFormOpen(true);
   };
 
   const contactBadges = [siteContent.city, ...siteContent.areas].slice(0, 3);
@@ -44,7 +93,10 @@ export default function Home() {
             </a>
             <button
               className="button primary"
-              onClick={() => setFormOpen(true)}
+              onClick={() => {
+                setLeadContext(null);
+                setFormOpen(true);
+              }}
             >
               {siteContent.cta.request}
             </button>
@@ -109,54 +161,28 @@ export default function Home() {
           <div className="container">
             <h2>Выберите, что сломалось</h2>
             <p>Быстро подскажу по проблемам и предложу решение.</p>
-            <div className="grid grid-2">
-              {siteContent.categories.map((category) => (
-                <div className="card" key={category.id}>
-                  <h3>{category.title}</h3>
-                  <p>{category.description}</p>
-                  <button
-                    className="button ghost"
-                    onClick={() => handleTileClick(category.id)}
-                  >
-                    Посмотреть частые проблемы
-                  </button>
-                </div>
-              ))}
-            </div>
+            <CategoryGrid
+              categories={siteContent.categories}
+              activeCategoryId={activeCategoryId}
+              onToggle={handleToggleCategory}
+            />
           </div>
         </section>
 
-        {siteContent.issues.map((group) => (
-          <section className="section" id={group.id} key={group.id}>
-            <div className="container">
-              <h2>{group.title}</h2>
-              <div className="grid grid-3">
-                {group.items.map((item) => (
-                  <div className="card issue-card" key={item.title}>
-                    <h3>{item.title}</h3>
-                    <p className="issue-meta">{item.details}</p>
-                    <p className="issue-risk">{item.risk}</p>
-                    <p className="issue-meta">{item.action}</p>
-                    <div className="cta-row">
-                      <a
-                        className="button primary"
-                        href={`tel:${siteContent.phone.tel}`}
-                      >
-                        Вызвать мастера
-                      </a>
-                      <button
-                        className="button secondary"
-                        onClick={() => setMessengerOpen(true)}
-                      >
-                        Написать
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </section>
-        ))}
+        {activeCategory ? (
+          <IssuesSection
+            category={activeCategory}
+            onRequest={({ category, issue }) => {
+              handleOpenForm({
+                categoryId: category.id,
+                categoryTitle: category.title,
+                issueTitle: issue?.title,
+                source: issue ? "issue-card" : "issues-section"
+              });
+            }}
+            onMessenger={() => setMessengerOpen(true)}
+          />
+        ) : null}
 
         <section className="section" id="whyme">
           <div className="container">
@@ -207,14 +233,14 @@ export default function Home() {
         </section>
 
         <section className="section" id="contacts">
-          <div className="container">
+          <div className="container contacts-container">
             <h2>Контакты и заявка</h2>
             <p>
               {siteContent.city}. Звоните или оставляйте заявку — перезвоню и
               уточню детали.
             </p>
-            <div className="grid grid-2">
-              <div className="contact-card">
+            <div className="contacts-grid">
+              <div className="contact-card contact-info">
                 <h3>Связаться со мной</h3>
                 <p>
                   Телефон: <a href={`tel:${siteContent.phone.tel}`}>
@@ -222,7 +248,7 @@ export default function Home() {
                   </a>
                 </p>
                 <p>Работаю: {siteContent.workHours}</p>
-                <div className="cta-row">
+                <div className="cta-row contact-actions">
                   <a className="button primary" href={`tel:${siteContent.phone.tel}`}>
                     {siteContent.cta.call}
                   </a>
@@ -234,7 +260,15 @@ export default function Home() {
                   </a>
                 </div>
               </div>
-              <LeadForm source="contacts" />
+              <LeadForm
+                source="contacts"
+                presetMessage={presetMessage}
+                leadContext={{
+                  categoryId: leadContext?.categoryId,
+                  categoryTitle: leadContext?.categoryTitle,
+                  issueTitle: leadContext?.issueTitle
+                }}
+              />
             </div>
           </div>
         </section>
@@ -252,7 +286,13 @@ export default function Home() {
         <button className="button secondary" onClick={() => setMessengerOpen(true)}>
           {siteContent.cta.write}
         </button>
-        <button className="button primary" onClick={() => setFormOpen(true)}>
+        <button
+          className="button primary"
+          onClick={() => {
+            setLeadContext(null);
+            setFormOpen(true);
+          }}
+        >
           {siteContent.cta.request}
         </button>
       </div>
@@ -271,8 +311,24 @@ export default function Home() {
         </div>
       </Modal>
 
-      <Modal open={isFormOpen} onClose={() => setFormOpen(false)}>
-        <LeadForm source="modal" compact onSuccess={() => setFormOpen(false)} />
+      <Modal
+        open={isFormOpen}
+        onClose={() => {
+          setFormOpen(false);
+          setLeadContext(null);
+        }}
+      >
+        <LeadForm
+          source={leadContext?.source ?? "modal"}
+          compact
+          presetMessage={presetMessage}
+          leadContext={{
+            categoryId: leadContext?.categoryId,
+            categoryTitle: leadContext?.categoryTitle,
+            issueTitle: leadContext?.issueTitle
+          }}
+          onSuccess={() => setFormOpen(false)}
+        />
       </Modal>
     </div>
   );

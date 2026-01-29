@@ -20,6 +20,11 @@ npm install
 cp .env.example .env
 ```
 
+Обязательные параметры для отправки заявок в Telegram:
+- `LEADS_TG_BOT_TOKEN` — токен Telegram-бота.
+- `LEADS_TG_ADMIN_IDS` — список Telegram user_id админов через запятую.
+- `LEADS_TG_PARSE_MODE` — режим форматирования (по умолчанию `HTML`).
+
 ## Запуск (dev)
 ```bash
 npm run dev
@@ -42,6 +47,12 @@ npm run leads:tail
 
 ## Хранение лидов
 Лиды сохраняются в `data/leads.jsonl` в формате JSONL и логируются в консоль.
+
+## Проверка отправки в Telegram
+1. Создайте бота через BotFather и получите токен.
+2. Укажите `LEADS_TG_BOT_TOKEN` и `LEADS_TG_ADMIN_IDS` (user_id админов).
+3. Отправьте тестовую заявку через форму на сайте.
+4. Если отправка в Telegram не удалась, API вернёт `500` и покажет сообщение пользователю.
 
 ## Деплой (быстрый вариант)
 **VPS/Render/Fly:**

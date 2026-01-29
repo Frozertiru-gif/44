@@ -93,8 +93,7 @@ export const siteContent: SiteContent = {
   areas,
   workHours,
   serviceArea: {
-    title: "Работаю по всем районам города и пригородам",
-    subtitle: "Центр · Север · Юг и ближайшие населённые пункты"
+    title: "Работаю по всем районам города и пригородам"
   },
   hero: {
     title: "Ремонт техники на дому",

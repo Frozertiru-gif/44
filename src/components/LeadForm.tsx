@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { track } from "@/src/lib/track";
 import { siteContent } from "@/src/content/site";
 import { usePhoneField } from "@/src/components/usePhoneField";
+import { MessengerButtons } from "@/src/components/MessengerButtons";
 
 type LeadFormProps = {
   source: string;
@@ -97,12 +98,7 @@ export const LeadForm = ({
           <a className="button primary" href={`tel:${siteContent.phone.tel}`}>
             {siteContent.cta.call}
           </a>
-          <a className="button ghost" href={siteContent.messengers.whatsapp}>
-            WhatsApp
-          </a>
-          <a className="button ghost" href={siteContent.messengers.telegram}>
-            Telegram
-          </a>
+          <MessengerButtons />
         </div>
       </div>
     );

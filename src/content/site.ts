@@ -3,6 +3,7 @@ export type Issue = {
   details: string;
   risk: string;
   action: string;
+  priority?: number;
 };
 
 export type IssueCategory = {
@@ -175,6 +176,14 @@ export const siteContent: SiteContent = {
       id: "tv",
       title: "Телевизор",
       items: [
+        {
+          title: "Настройка телевизора / Smart TV",
+          details:
+            "Если не открывается YouTube, не работает Smart TV, пропали каналы или нужно подключить интернет — помогу настроить всё на месте. Подключу к Wi-Fi, обновлю приложения, настрою каналы и объясню, как пользоваться.",
+          risk: "Без правильной настройки можно только ухудшить ситуацию — лучше вызвать мастера.",
+          action: "Настрою Smart TV и подключение, чтобы всё работало с первого раза.",
+          priority: 100
+        },
         {
           title: "Нет изображения",
           details: "Экран темный, но звук есть.",

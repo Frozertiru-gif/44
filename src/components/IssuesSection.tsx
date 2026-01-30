@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { IssueCategory, siteContent } from "@/src/content/site";
 import { IssueCard } from "@/src/components/IssueCard";
 
@@ -12,6 +12,21 @@ type IssuesSectionProps = {
 
 export const IssuesSection = ({ category, onRequest, onMessenger }: IssuesSectionProps) => {
   const sectionRef = useRef<HTMLElement | null>(null);
+  const sortedItems = useMemo(
+    () =>
+      category.items
+        .map((item, index) => ({ item, index }))
+        .sort((a, b) => {
+          const priorityA = a.item.priority ?? 0;
+          const priorityB = b.item.priority ?? 0;
+          if (priorityA !== priorityB) {
+            return priorityB - priorityA;
+          }
+          return a.index - b.index;
+        })
+        .map(({ item }) => item),
+    [category.items]
+  );
 
   useEffect(() => {
     const section = sectionRef.current;
@@ -26,7 +41,7 @@ export const IssuesSection = ({ category, onRequest, onMessenger }: IssuesSectio
       <div className="container">
         <h2>{category.title}</h2>
         <div className="grid grid-3" id={`issues-${category.id}`}>
-          {category.items.map((issue) => (
+          {sortedItems.map((issue) => (
             <IssueCard
               key={issue.title}
               issue={issue}

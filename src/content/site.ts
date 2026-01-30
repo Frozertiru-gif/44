@@ -88,7 +88,7 @@ const workHours = process.env.NEXT_PUBLIC_WORK_HOURS ?? "Ежедневно 9:00
 
 export const siteContent: SiteContent = {
   brand: {
-    name: "Андрей",
+    name: "Илья",
     tag: "Частный мастер"
   },
   phone: {
@@ -101,7 +101,7 @@ export const siteContent: SiteContent = {
     maxUrl: maxUrl || undefined
   },
   master: {
-    name: "Андрей",
+    name: "Илья",
     subtitle: "Частный мастер",
     photoUrl: masterPhotoUrl || undefined,
     note: "Без колл-центров и посредников"
@@ -321,7 +321,7 @@ export const siteContent: SiteContent = {
     "Гарантия на выполненные работы"
   ],
   about: {
-    title: "Я частный мастер Андрей",
+    title: "Я частный мастер Илья",
     text: "Работаю по городу и ближайшим районам. Приезжаю с базовыми запчастями, объясняю простым языком и делаю как для себя."
   },
   reviews: [

@@ -1,0 +1,270 @@
+from __future__ import annotations
+
+from datetime import date, timedelta
+
+from aiogram import Bot, F, Router
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery, Message
+
+from app.bot.handlers.permissions import CREATE_ROLES
+from app.bot.handlers.utils import (
+    ADSOURCE_MAP,
+    CATEGORY_MAP,
+    format_ticket_card,
+    format_ticket_preview,
+    is_valid_phone,
+    normalize_phone,
+    parse_time,
+)
+from app.bot.keyboards.main_menu import build_main_menu
+from app.bot.keyboards.request_chat import request_chat_keyboard
+from app.bot.keyboards.ticket_wizard import (
+    ad_source_keyboard,
+    age_keyboard,
+    category_keyboard,
+    confirm_keyboard,
+    name_keyboard,
+    repeat_warning_keyboard,
+    schedule_keyboard,
+    special_note_keyboard,
+)
+from app.bot.states.ticket_create import TicketCreateStates
+from app.core.config import get_settings
+from app.db.enums import AdSource
+from app.db.session import async_session_factory
+from app.services.audit_service import AuditService
+from app.services.ticket_service import TicketService
+from app.services.user_service import UserService
+
+router = Router()
+settings = get_settings()
+user_service = UserService()
+ticket_service = TicketService()
+audit_service = AuditService()
+
+
+@router.message(F.text == "➕ Создать заказ")
+async def start_ticket_creation(message: Message, state: FSMContext) -> None:
+    async with async_session_factory() as session:
+        user = await user_service.ensure_user(
+            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+        )
+        await session.commit()
+
+    if not user.is_active or user.role not in CREATE_ROLES:
+        await message.answer("У вас нет прав для создания заказа.")
+        return
+
+    await state.clear()
+    await state.set_state(TicketCreateStates.category)
+    await message.answer("Выберите категорию:", reply_markup=await category_keyboard())
+
+
+@router.message(TicketCreateStates.category)
+async def ticket_category(message: Message, state: FSMContext) -> None:
+    category = CATEGORY_MAP.get(message.text or "")
+    if not category:
+        await message.answer("Пожалуйста, выберите категорию кнопкой.")
+        return
+    await state.update_data(category=category)
+    await state.set_state(TicketCreateStates.phone)
+    await message.answer("Введите телефон клиента:")
+
+
+@router.message(TicketCreateStates.phone)
+async def ticket_phone(message: Message, state: FSMContext) -> None:
+    raw_phone = message.text or ""
+    phone = normalize_phone(raw_phone)
+    if not is_valid_phone(phone):
+        await message.answer("Введите корректный телефон.")
+        return
+
+    async with async_session_factory() as session:
+        repeats = await ticket_service.search_by_phone(session, phone)
+
+    repeat_ids = [ticket.id for ticket in repeats]
+    is_repeat = len(repeat_ids) > 0
+
+    await state.update_data(client_phone=phone, is_repeat=is_repeat, repeat_ticket_ids=repeat_ids)
+    if is_repeat:
+        await state.set_state(TicketCreateStates.repeat_confirm)
+        await message.answer(
+            f"⚠️ Повторный клиент: ранее были #{', #'.join(map(str, repeat_ids))}",
+            reply_markup=await repeat_warning_keyboard(),
+        )
+        return
+
+    await state.set_state(TicketCreateStates.schedule_choice)
+    await message.answer("Удобная дата?", reply_markup=await schedule_keyboard())
+
+
+@router.callback_query(F.data == "repeat_continue")
+async def repeat_continue(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    await state.set_state(TicketCreateStates.schedule_choice)
+    await callback.message.answer("Удобная дата?", reply_markup=await schedule_keyboard())
+
+
+@router.message(TicketCreateStates.schedule_choice)
+async def ticket_schedule_choice(message: Message, state: FSMContext) -> None:
+    text = message.text or ""
+    if text not in {"Сегодня", "Завтра", "Пропустить"}:
+        await message.answer("Выберите вариант кнопкой.")
+        return
+
+    if text == "Пропустить":
+        await state.update_data(scheduled_at=None)
+        await state.set_state(TicketCreateStates.client_name)
+        await message.answer("Имя клиента:", reply_markup=await name_keyboard())
+        return
+
+    target_date = date.today() if text == "Сегодня" else date.today() + timedelta(days=1)
+    await state.update_data(schedule_date=target_date)
+    await state.set_state(TicketCreateStates.schedule_time)
+    await message.answer("Введите время (HH:MM):")
+
+
+@router.message(TicketCreateStates.schedule_time)
+async def ticket_schedule_time(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    target_date = data.get("schedule_date")
+    if not isinstance(target_date, date):
+        await state.set_state(TicketCreateStates.schedule_choice)
+        await message.answer("Удобная дата?", reply_markup=await schedule_keyboard())
+        return
+
+    schedule = parse_time(message.text or "", target_date)
+    if not schedule:
+        await message.answer("Введите время в формате HH:MM.")
+        return
+
+    await state.update_data(scheduled_at=schedule)
+    await state.set_state(TicketCreateStates.client_name)
+    await message.answer("Имя клиента:", reply_markup=await name_keyboard())
+
+
+@router.message(TicketCreateStates.client_name)
+async def ticket_client_name(message: Message, state: FSMContext) -> None:
+    text = message.text or ""
+    name = None if text == "Пропустить" else text
+    await state.update_data(client_name=name)
+    await state.set_state(TicketCreateStates.client_age)
+    await message.answer("Возраст (примерно):", reply_markup=await age_keyboard())
+
+
+@router.message(TicketCreateStates.client_age)
+async def ticket_client_age(message: Message, state: FSMContext) -> None:
+    text = message.text or ""
+    if text in {"Пропустить", "Не знаю"}:
+        age = None
+    else:
+        try:
+            age = int(text)
+        except ValueError:
+            await message.answer("Введите число или выберите 'Не знаю'.")
+            return
+
+    await state.update_data(client_age_estimate=age)
+    await state.set_state(TicketCreateStates.problem)
+    await message.answer("Опишите проблему:")
+
+
+@router.message(TicketCreateStates.problem)
+async def ticket_problem(message: Message, state: FSMContext) -> None:
+    text = message.text or ""
+    if not text.strip():
+        await message.answer("Проблема обязательна.")
+        return
+
+    await state.update_data(problem_text=text)
+    await state.set_state(TicketCreateStates.special_note)
+    await message.answer("Спецпометка:", reply_markup=await special_note_keyboard())
+
+
+@router.message(TicketCreateStates.special_note)
+async def ticket_special_note(message: Message, state: FSMContext) -> None:
+    text = message.text or ""
+    if text == "Другое":
+        await state.set_state(TicketCreateStates.special_note_custom)
+        await message.answer("Введите спецпометку:")
+        return
+
+    if text == "Нет":
+        note = None
+    else:
+        note = text
+    await state.update_data(special_note=note)
+    await state.set_state(TicketCreateStates.ad_source)
+    await message.answer("Источник рекламы:", reply_markup=await ad_source_keyboard())
+
+
+@router.message(TicketCreateStates.special_note_custom)
+async def ticket_special_note_custom(message: Message, state: FSMContext) -> None:
+    text = message.text or ""
+    if not text.strip():
+        await message.answer("Введите спецпометку.")
+        return
+    await state.update_data(special_note=text)
+    await state.set_state(TicketCreateStates.ad_source)
+    await message.answer("Источник рекламы:", reply_markup=await ad_source_keyboard())
+
+
+@router.message(TicketCreateStates.ad_source)
+async def ticket_ad_source(message: Message, state: FSMContext) -> None:
+    source = ADSOURCE_MAP.get(message.text or "")
+    if not source:
+        await message.answer("Выберите источник кнопкой.")
+        return
+
+    await state.update_data(ad_source=source)
+    await state.set_state(TicketCreateStates.confirm)
+    data = await state.get_data()
+    await message.answer(format_ticket_preview(data), reply_markup=await confirm_keyboard())
+
+
+@router.callback_query(F.data == "ticket_confirm")
+async def ticket_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
+    data = await state.get_data()
+
+    async with async_session_factory() as session:
+        user = await user_service.ensure_user(
+            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+        )
+        if not user.is_active or user.role not in CREATE_ROLES:
+            await callback.answer("Нет прав", show_alert=True)
+            return
+
+        ticket = await ticket_service.create_ticket(
+            session,
+            category=data["category"],
+            scheduled_at=data.get("scheduled_at"),
+            client_name=data.get("client_name"),
+            client_age_estimate=data.get("client_age_estimate"),
+            client_phone=data["client_phone"],
+            problem_text=data["problem_text"],
+            special_note=data.get("special_note"),
+            ad_source=data.get("ad_source", AdSource.UNKNOWN),
+            created_by_admin_id=user.id,
+            is_repeat=data.get("is_repeat", False),
+            repeat_ticket_ids=data.get("repeat_ticket_ids"),
+        )
+        await audit_service.log_event(session, ticket_id=ticket.id, action="TICKET_CREATED", actor_id=user.id)
+        await session.commit()
+
+    bot_info = await bot.get_me()
+    await bot.send_message(
+        settings.requests_chat_id,
+        format_ticket_card(ticket),
+        reply_markup=request_chat_keyboard(ticket.id, bot_info.username),
+    )
+
+    await callback.message.answer(f"Заказ #{ticket.id} создан.", reply_markup=await build_main_menu(user.role))
+    await state.clear()
+    await callback.answer()
+
+
+@router.callback_query(F.data == "ticket_cancel")
+async def ticket_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.message.answer("Создание заказа отменено.")
+    await callback.answer()

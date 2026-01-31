@@ -1,0 +1,15 @@
+version: "3.9"
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: telegram_service
+      POSTGRES_USER: telegram
+      POSTGRES_PASSWORD: telegram
+    ports:
+      - "5432:5432"
+    volumes:
+      - telegram_service_db:/var/lib/postgresql/data
+
+volumes:
+  telegram_service_db:

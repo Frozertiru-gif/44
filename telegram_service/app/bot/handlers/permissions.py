@@ -1,0 +1,6 @@
+from app.db.enums import UserRole
+
+
+CREATE_ROLES = {UserRole.SYS_ADMIN, UserRole.SUPER_ADMIN, UserRole.ADMIN, UserRole.JUNIOR_ADMIN}
+CANCEL_ROLES = {UserRole.SYS_ADMIN, UserRole.SUPER_ADMIN, UserRole.ADMIN}
+USER_ADMIN_ROLES = {UserRole.SYS_ADMIN, UserRole.SUPER_ADMIN}

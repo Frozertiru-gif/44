@@ -3,6 +3,7 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Set
 
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +13,7 @@ class Settings(BaseSettings):
     bot_token: str
     database_url: str
     requests_chat_id: int
+    super_admin: int | None = Field(default=None, validation_alias=AliasChoices("SUPER_ADMIN", "super_admin"))
     sys_admin_ids: str = ""
     finance_export_chat_id: int | None = None
 

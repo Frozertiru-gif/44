@@ -12,7 +12,15 @@
 1. Скопируйте `.env.example` в `.env` и заполните значения.
 2. По умолчанию `DATABASE_URL` в `.env.example` совпадает с кредами из `docker-compose.yml` (`telegram/telegram`).
    Если используете другую БД, обновите `DATABASE_URL`.
-3. Укажите `SYS_ADMIN_IDS` через запятую (tg_id администраторов), чтобы они получили роль SYS_ADMIN после первого `/start`.
+3. Укажите `SUPER_ADMIN` (один tg_id) и/или `SYS_ADMIN_IDS` через запятую (tg_id администраторов), чтобы они получили роли
+   SUPER_ADMIN/SYS_ADMIN после первого `/start`.
+
+Обязательные переменные окружения:
+
+- `BOT_TOKEN`
+- `DATABASE_URL`
+- `REQUESTS_CHAT_ID`
+- `SUPER_ADMIN` или `SYS_ADMIN_IDS` (минимум одно значение)
 
 ## Установка зависимостей
 
@@ -23,6 +31,14 @@ pip install -r requirements.txt
 ```
 
 ## Быстрый старт
+
+```bash
+docker compose up -d db
+alembic upgrade head
+python -m app.main
+```
+
+## Быстрый старт (Windows)
 
 ```bash
 docker compose up -d db

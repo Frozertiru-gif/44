@@ -24,7 +24,11 @@ class User(Base):
     master_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     admin_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
 
-    created_tickets = relationship("Ticket", back_populates="created_by")
+    created_tickets = relationship(
+        "Ticket",
+        back_populates="created_by",
+        foreign_keys="Ticket.created_by_admin_id",
+    )
 
 
 class Ticket(Base):
@@ -44,7 +48,7 @@ class Ticket(Base):
     repeat_ticket_ids: Mapped[list[int] | None] = mapped_column(JSON, nullable=True)
 
     created_by_admin_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
-    created_by = relationship("User", back_populates="created_tickets")
+    created_by = relationship("User", back_populates="created_tickets", foreign_keys=[created_by_admin_id])
 
     assigned_executor_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
     assigned_executor = relationship("User", foreign_keys=[assigned_executor_id])

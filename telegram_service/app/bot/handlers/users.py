@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+from decimal import Decimal, InvalidOperation
+
 from aiogram import F, Router
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.handlers.permissions import USER_ADMIN_ROLES
 from app.bot.keyboards.users import user_list_keyboard, user_role_keyboard
+from app.bot.states.user_percent import UserPercentStates
 from app.db.enums import UserRole
 from app.db.session import async_session_factory
 from app.services.audit_service import AuditService
@@ -48,12 +52,15 @@ async def user_card(callback: CallbackQuery) -> None:
     if not target:
         await callback.answer("Пользователь не найден", show_alert=True)
         return
-
+    master_percent = f"{target.master_percent:.2f}" if target.master_percent is not None else "-"
+    admin_percent = f"{target.admin_percent:.2f}" if target.admin_percent is not None else "-"
     await callback.message.answer(
         f"Пользователь {target.id}\n"
         f"Имя: {target.display_name or '-'}\n"
         f"Роль: {target.role.value}\n"
-        f"Статус: {'активен' if target.is_active else 'выключен'}",
+        f"Статус: {'активен' if target.is_active else 'выключен'}\n"
+        f"% мастера: {master_percent}\n"
+        f"% админа: {admin_percent}",
         reply_markup=user_role_keyboard(target.id),
     )
     await callback.answer()
@@ -152,3 +159,80 @@ async def user_enable(callback: CallbackQuery) -> None:
         await session.commit()
 
     await callback.answer("Пользователь включен")
+
+
+@router.callback_query(F.data.startswith("user_percent:"))
+async def user_percent_start(callback: CallbackQuery, state: FSMContext) -> None:
+    _, percent_type, user_id = callback.data.split(":", 2)
+    user_id_int = int(user_id)
+
+    async with async_session_factory() as session:
+        actor = await user_service.ensure_user(
+            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+        )
+        if not actor.is_active or actor.role not in USER_ADMIN_ROLES:
+            await callback.answer("Нет прав", show_alert=True)
+            return
+    await state.clear()
+    await state.update_data(user_id=user_id_int, percent_type=percent_type)
+    await state.set_state(UserPercentStates.percent)
+    await callback.message.answer("Введите процент (0..100, до 2 знаков после запятой):")
+    await callback.answer()
+
+
+@router.message(UserPercentStates.percent)
+async def user_percent_set(message: Message, state: FSMContext) -> None:
+    text = (message.text or "").replace(",", ".").strip()
+    try:
+        percent = Decimal(text)
+    except (InvalidOperation, ValueError):
+        await message.answer("Введите корректный процент.")
+        return
+
+    data = await state.get_data()
+    user_id = data.get("user_id")
+    percent_type = data.get("percent_type")
+    if not isinstance(user_id, int) or percent_type not in {"master", "admin"}:
+        await message.answer("Сессия устарела.")
+        await state.clear()
+        return
+
+    async with async_session_factory() as session:
+        actor = await user_service.ensure_user(
+            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+        )
+        if not actor.is_active or actor.role not in USER_ADMIN_ROLES:
+            await message.answer("Нет прав.")
+            await session.commit()
+            await state.clear()
+            return
+
+        target = await user_service.get_user(session, user_id)
+        if not target:
+            await message.answer("Пользователь не найден.")
+            await state.clear()
+            return
+
+        try:
+            if percent_type == "master":
+                await user_service.set_master_percent(session, target, percent)
+                action = "USER_MASTER_PERCENT_SET"
+            else:
+                await user_service.set_admin_percent(session, target, percent)
+                action = "USER_ADMIN_PERCENT_SET"
+        except ValueError as exc:
+            await message.answer(str(exc))
+            return
+
+        await audit_service.log_audit_event(
+            session,
+            actor_id=actor.id,
+            action=action,
+            entity_type="user",
+            entity_id=target.id,
+            payload={"percent": float(percent)},
+        )
+        await session.commit()
+
+    await state.clear()
+    await message.answer("Процент обновлен.")

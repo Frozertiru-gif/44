@@ -7,7 +7,7 @@ from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, JSON, Nu
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.db.enums import AdSource, TicketCategory, TicketStatus, TransferStatus, UserRole
+from app.db.enums import AdSource, ProjectTransactionType, TicketCategory, TicketStatus, TransferStatus, UserRole
 
 
 class User(Base):
@@ -19,6 +19,8 @@ class User(Base):
     display_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    master_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    admin_percent: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
 
     created_tickets = relationship("Ticket", back_populates="created_by")
 
@@ -58,6 +60,11 @@ class Ticket(Base):
     junior_master_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
     junior_master_percent_at_close: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     junior_master_earned_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    executor_percent_at_close: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    admin_percent_at_close: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    executor_earned_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    admin_earned_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    project_take_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     junior_master = relationship("User", foreign_keys=[junior_master_id])
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -105,3 +112,35 @@ class AuditEvent(Base):
     entity_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ProjectTransaction(Base):
+    __tablename__ = "project_transactions"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    type: Mapped[ProjectTransactionType] = mapped_column(
+        Enum(ProjectTransactionType, name="project_transaction_type"), nullable=False
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    category: Mapped[str] = mapped_column(Text, nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_by: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    creator = relationship("User", foreign_keys=[created_by])
+
+
+class ProjectShare(Base):
+    __tablename__ = "project_shares"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    user_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
+    percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    set_by: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
+    set_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user = relationship("User", foreign_keys=[user_id])
+    setter = relationship("User", foreign_keys=[set_by])

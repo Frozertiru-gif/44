@@ -24,6 +24,8 @@ def user_role_keyboard(user_id: int) -> InlineKeyboardMarkup:
     rows = []
     for role in roles:
         rows.append([InlineKeyboardButton(text=role.value, callback_data=f"role:{user_id}:{role.value}")])
+    rows.append([InlineKeyboardButton(text="💼 % мастера", callback_data=f"user_percent:master:{user_id}")])
+    rows.append([InlineKeyboardButton(text="💼 % админа", callback_data=f"user_percent:admin:{user_id}")])
     rows.append([InlineKeyboardButton(text="🔒 Выключить", callback_data=f"user_disable:{user_id}")])
     rows.append([InlineKeyboardButton(text="🔓 Включить", callback_data=f"user_enable:{user_id}")])
     return InlineKeyboardMarkup(inline_keyboard=rows)

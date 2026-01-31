@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     database_url: str
     requests_chat_id: int
     sys_admin_ids: str = ""
+    finance_export_chat_id: int | None = None
 
     webhook_secret: str | None = None
     public_base_url: str | None = None

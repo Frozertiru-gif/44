@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from sqlalchemy import select, update
@@ -9,13 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.enums import AdSource, TicketCategory, TicketStatus, TransferStatus
-from app.db.models import Ticket
+from app.db.models import Ticket, User
 from app.services.audit_service import AuditService
 
 
 class TicketService:
     def __init__(self) -> None:
         self._audit = AuditService()
+        self._money_round = Decimal("0.01")
 
     async def search_by_phone(self, session: AsyncSession, phone: str, limit: int = 5) -> list[Ticket]:
         result = await session.execute(
@@ -188,9 +189,36 @@ class TicketService:
         allow_override: bool = False,
     ) -> Ticket | None:
         now = datetime.utcnow()
+        ticket = await self.get_ticket_with_executor(session, ticket_id)
+        if not ticket:
+            return None
+        executor_id = ticket.assigned_executor_id
+        admin_id = ticket.created_by_admin_id
+        if executor_id is None or admin_id is None:
+            return None
+
+        executor_percent = await self._get_user_percent(session, executor_id, field="master_percent")
+        admin_percent = await self._get_user_percent(session, admin_id, field="admin_percent")
+        junior_percent = junior_master_percent or Decimal("0")
+
+        try:
+            executor_percent = self._validate_percent(executor_percent)
+            admin_percent = self._validate_percent(admin_percent)
+            junior_percent = self._validate_percent(junior_percent)
+        except ValueError:
+            return None
+
         net_profit = revenue - expense
         if net_profit < 0:
             net_profit = Decimal("0")
+
+        executor_earned = self._round_money(net_profit * executor_percent / Decimal("100"))
+        admin_earned = self._round_money(net_profit * admin_percent / Decimal("100"))
+        junior_earned = self._round_money(net_profit * junior_percent / Decimal("100"))
+        project_take = net_profit - (executor_earned + admin_earned + junior_earned)
+        if project_take < 0:
+            project_take = Decimal("0.00")
+
         allowed = [TicketStatus.TAKEN, TicketStatus.IN_PROGRESS, TicketStatus.WAITING]
         query = update(Ticket).where(Ticket.id == ticket_id, Ticket.status.in_(allowed))
         if not allow_override:
@@ -207,7 +235,13 @@ class TicketService:
                 transfer_confirmed_at=None,
                 transfer_confirmed_by=None,
                 junior_master_id=junior_master_id,
-                junior_master_percent_at_close=junior_master_percent,
+                junior_master_percent_at_close=junior_percent if junior_master_id else None,
+                junior_master_earned_amount=junior_earned if junior_master_id else None,
+                executor_percent_at_close=executor_percent,
+                admin_percent_at_close=admin_percent,
+                executor_earned_amount=executor_earned,
+                admin_earned_amount=admin_earned,
+                project_take_amount=project_take,
                 updated_at=now,
             )
         )
@@ -228,6 +262,21 @@ class TicketService:
                     "junior_master_percent": float(junior_master_percent)
                     if junior_master_percent is not None
                     else None,
+                },
+            )
+            await self._audit.log_event(
+                session,
+                ticket_id=ticket.id,
+                action="TICKET_PAYOUTS_FIXED",
+                actor_id=actor_id,
+                payload={
+                    "executor_percent": float(executor_percent),
+                    "admin_percent": float(admin_percent),
+                    "junior_percent": float(junior_percent) if junior_master_id else None,
+                    "executor_earned": float(executor_earned),
+                    "admin_earned": float(admin_earned),
+                    "junior_earned": float(junior_earned) if junior_master_id else None,
+                    "project_take": float(project_take),
                 },
             )
         return ticket
@@ -308,3 +357,21 @@ class TicketService:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def _get_user_percent(self, session: AsyncSession, user_id: int, *, field: str) -> Decimal:
+        result = await session.execute(select(User).where(User.id == user_id))
+        user = result.scalar_one_or_none()
+        if not user:
+            return Decimal("0")
+        value = getattr(user, field, None)
+        return value if value is not None else Decimal("0")
+
+    def _validate_percent(self, percent: Decimal) -> Decimal:
+        if percent < 0 or percent > 100:
+            raise ValueError("Процент должен быть от 0 до 100")
+        if percent.as_tuple().exponent < -2:
+            raise ValueError("Процент должен иметь максимум 2 знака после запятой")
+        return percent
+
+    def _round_money(self, value: Decimal) -> Decimal:
+        return value.quantize(self._money_round, rounding=ROUND_HALF_UP)

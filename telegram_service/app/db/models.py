@@ -55,11 +55,31 @@ class Ticket(Base):
     transfer_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     transfer_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     transfer_confirmed_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
+    junior_master_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
+    junior_master_percent_at_close: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    junior_master_earned_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    junior_master = relationship("User", foreign_keys=[junior_master_id])
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     events = relationship("TicketEvent", back_populates="ticket")
+
+
+class MasterJuniorLink(Base):
+    __tablename__ = "master_junior_links"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    master_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
+    junior_master_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
+    percent: Mapped[Decimal] = mapped_column(Numeric(5, 2), nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    master = relationship("User", foreign_keys=[master_id])
+    junior_master = relationship("User", foreign_keys=[junior_master_id])
 
 
 class TicketEvent(Base):

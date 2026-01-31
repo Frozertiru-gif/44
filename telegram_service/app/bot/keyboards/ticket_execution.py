@@ -37,6 +37,22 @@ def close_confirm_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def close_junior_keyboard(options: list[tuple[int, str, str]]) -> InlineKeyboardMarkup:
+    buttons: list[list[InlineKeyboardButton]] = [
+        [InlineKeyboardButton(text="Без младшего мастера", callback_data="close_junior:none")]
+    ]
+    for junior_id, label, percent in options:
+        buttons.append(
+            [
+                InlineKeyboardButton(
+                    text=f"{label} ({percent}%)",
+                    callback_data=f"close_junior:{junior_id}",
+                )
+            ]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 def transfer_approval_actions(ticket_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[

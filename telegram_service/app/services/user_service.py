@@ -33,6 +33,10 @@ class UserService:
         result = await session.execute(select(User).order_by(User.id.desc()).limit(limit))
         return list(result.scalars().all())
 
+    async def list_users_by_roles(self, session: AsyncSession, roles: set[UserRole], limit: int = 50) -> list[User]:
+        result = await session.execute(select(User).where(User.role.in_(roles)).order_by(User.id.desc()).limit(limit))
+        return list(result.scalars().all())
+
     async def get_user(self, session: AsyncSession, user_id: int) -> User | None:
         result = await session.execute(select(User).where(User.id == user_id))
         return result.scalar_one_or_none()

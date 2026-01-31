@@ -16,12 +16,16 @@ async def build_main_menu(role: UserRole) -> ReplyKeyboardMarkup:
     if role in ROLE_CREATE:
         rows.append([KeyboardButton(text="➕ Создать заказ")])
         rows.append([KeyboardButton(text="📋 Список заказов")])
-    if role in {UserRole.MASTER, UserRole.JUNIOR_MASTER, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN}:
+    if role in {UserRole.MASTER, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN}:
         rows.append([KeyboardButton(text="🧾 Очередь")])
         rows.append([KeyboardButton(text="🔥 Мои активные")])
         rows.append([KeyboardButton(text="📦 Мои закрытые")])
+    if role in {UserRole.JUNIOR_MASTER}:
+        rows.append([KeyboardButton(text="📋 Заявки моего мастера")])
     if role in {UserRole.SYS_ADMIN, UserRole.SUPER_ADMIN}:
         rows.append([KeyboardButton(text="👥 Пользователи")])
         rows.append([KeyboardButton(text="✅ Подтверждения")])
+    if role in {UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN, UserRole.MASTER}:
+        rows.append([KeyboardButton(text="👥 Привязки младших мастеров")])
     rows.append([KeyboardButton(text="ℹ️ Помощь")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)

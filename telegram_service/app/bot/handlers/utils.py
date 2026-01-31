@@ -46,6 +46,7 @@ def format_ticket_card(ticket: Ticket) -> str:
     note = ticket.special_note or "-"
     ad = ticket.ad_source.value if ticket.ad_source else "-"
     executor = format_executor_label(ticket)
+    junior_master = format_junior_master_label(ticket)
     transfer = format_transfer_label(ticket)
     finance = format_finance_block(ticket)
     return (
@@ -59,6 +60,7 @@ def format_ticket_card(ticket: Ticket) -> str:
         f"Реклама: {ad}\n"
         f"Статус: {ticket.status.value}"
         f"{executor}"
+        f"{junior_master}"
         f"{finance}"
         f"{transfer}"
     )
@@ -113,6 +115,15 @@ def format_transfer_label(ticket: Ticket) -> str:
     if not ticket.transfer_status:
         return ""
     return f"\nПеревод: {ticket.transfer_status.value}"
+
+
+def format_junior_master_label(ticket: Ticket) -> str:
+    if not ticket.junior_master_id:
+        return ""
+    junior_obj = ticket.__dict__.get("junior_master")
+    junior_label = junior_obj.display_name if junior_obj else None
+    junior_text = junior_label or f"ID {ticket.junior_master_id}"
+    return f"\nМладший мастер: {junior_text}"
 
 
 def format_finance_block(ticket: Ticket) -> str:

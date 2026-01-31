@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, JSON, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, JSON, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.db.enums import AdSource, TicketCategory, TicketStatus, UserRole
+from app.db.enums import AdSource, TicketCategory, TicketStatus, TransferStatus, UserRole
 
 
 class User(Base):
@@ -40,6 +41,20 @@ class Ticket(Base):
 
     created_by_admin_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=False)
     created_by = relationship("User", back_populates="created_tickets")
+
+    assigned_executor_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
+    assigned_executor = relationship("User", foreign_keys=[assigned_executor_id])
+    taken_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    revenue: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    expense: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    net_profit: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    transfer_status: Mapped[TransferStatus | None] = mapped_column(
+        Enum(TransferStatus, name="transfer_status"), nullable=True
+    )
+    transfer_sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    transfer_confirmed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    transfer_confirmed_by: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

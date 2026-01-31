@@ -41,7 +41,12 @@ class TicketService:
         repeat_ticket_ids: list[int] | None = None,
     ) -> Ticket | None:
         actor = await session.get(User, created_by_admin_id)
-        if not actor or actor.role not in {UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN}:
+        if not actor or actor.role not in {
+            UserRole.ADMIN,
+            UserRole.JUNIOR_ADMIN,
+            UserRole.SUPER_ADMIN,
+            UserRole.SYS_ADMIN,
+        }:
             await self._log_permission_denied(
                 session,
                 actor_id=created_by_admin_id,

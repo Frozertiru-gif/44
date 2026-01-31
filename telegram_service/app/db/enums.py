@@ -37,6 +37,21 @@ class AdSource(str, Enum):
     UNKNOWN = "Неизвестно"
 
 
+class LeadStatus(str, Enum):
+    NEW_RAW = "NEW_RAW"
+    NEED_INFO = "NEED_INFO"
+    CONVERTED = "CONVERTED"
+    SPAM = "SPAM"
+
+
+class LeadAdSource(str, Enum):
+    AVITO = "AVITO"
+    FLYER = "FLYER"
+    BUSINESS_CARD = "BUSINESS_CARD"
+    OTHER = "OTHER"
+    UNKNOWN = "UNKNOWN"
+
+
 class TransferStatus(str, Enum):
     NOT_SENT = "NOT_SENT"
     SENT = "SENT"

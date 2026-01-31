@@ -3,12 +3,25 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Iterable
 
-from app.db.enums import AdSource, TicketCategory, TicketStatus
-from app.db.models import Ticket
+from app.db.enums import AdSource, LeadAdSource, LeadStatus, TicketCategory, TicketStatus
+from app.db.models import Lead, Ticket
 
 
 CATEGORY_MAP = {item.value: item for item in TicketCategory}
 ADSOURCE_MAP = {item.value: item for item in AdSource}
+LEAD_STATUS_LABELS = {
+    LeadStatus.NEW_RAW: "Новая",
+    LeadStatus.NEED_INFO: "Нужно уточнить",
+    LeadStatus.CONVERTED: "Конвертировано",
+    LeadStatus.SPAM: "Спам",
+}
+LEAD_AD_SOURCE_LABELS = {
+    LeadAdSource.AVITO: "Авито",
+    LeadAdSource.FLYER: "Листовка",
+    LeadAdSource.BUSINESS_CARD: "Визитка",
+    LeadAdSource.OTHER: "Другое",
+    LeadAdSource.UNKNOWN: "Неизвестно",
+}
 
 
 def normalize_phone(raw: str) -> str:
@@ -100,6 +113,28 @@ def format_ticket_list(tickets: Iterable[Ticket]) -> str:
         status = "" if ticket.status == TicketStatus.READY_FOR_WORK else f" ({ticket.status.value})"
         lines.append(f"#{ticket.id} {ticket.category.value} {ticket.client_phone} {marker}{status}")
     return "\n".join(lines) if lines else "Нет заказов."
+
+
+def format_lead_card(lead: Lead, *, repeat_count: int | None = None) -> str:
+    lead_id_short = str(lead.id).split("-", maxsplit=1)[0]
+    scheduled = lead.preferred_datetime.strftime("%Y-%m-%d %H:%M") if lead.preferred_datetime else "Не указано"
+    ad_source = LEAD_AD_SOURCE_LABELS.get(lead.ad_source, "Неизвестно") if lead.ad_source else "-"
+    status_label = LEAD_STATUS_LABELS.get(lead.status, lead.status.value)
+    lines = [
+        f"📥 Сырая заявка #{lead_id_short}",
+        f"Телефон: {lead.client_phone or '-'}",
+        f"Клиент: {lead.client_name or '-'}",
+        f"Удобно: {scheduled}",
+        f"Проблема: {lead.problem_text}",
+        f"Реклама: {ad_source}",
+        f"Пометка: {lead.special_note or '-'}",
+        f"Статус: {status_label}",
+    ]
+    if lead.converted_ticket_id:
+        lines.append(f"✅ Конвертировано в заказ #{lead.converted_ticket_id}")
+    if repeat_count:
+        lines.append(f"По телефону найдены прошлые заявки: {repeat_count}")
+    return "\n".join(lines)
 
 
 def format_executor_label(ticket: Ticket) -> str:

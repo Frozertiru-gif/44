@@ -1,12 +1,21 @@
 from __future__ import annotations
 
-from aiogram import F, Router
+from uuid import UUID
+
+from aiogram import Bot, F, Router
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.storage.base import StorageKey
 from aiogram.types import CallbackQuery
 
-from app.bot.handlers.permissions import CANCEL_ROLES
-from app.bot.handlers.utils import format_ticket_card
+from app.bot.handlers.permissions import CANCEL_ROLES, CREATE_ROLES
+from app.bot.handlers.utils import format_lead_card, format_ticket_card
+from app.bot.keyboards.request_chat import lead_request_keyboard
+from app.bot.keyboards.ticket_wizard import category_keyboard
+from app.bot.states.ticket_create import TicketCreateStates
+from app.db.enums import LeadStatus
 from app.db.session import async_session_factory
 from app.services.audit_service import AuditService
+from app.services.lead_service import LeadService
 from app.services.ticket_service import TicketService
 from app.services.user_service import UserService
 
@@ -14,6 +23,7 @@ router = Router()
 user_service = UserService()
 ticket_service = TicketService()
 audit_service = AuditService()
+lead_service = LeadService()
 
 
 @router.callback_query(F.data.startswith("cancel:"))
@@ -64,3 +74,79 @@ async def cancel_from_request_chat(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("edit:"))
 async def edit_stub(callback: CallbackQuery) -> None:
     await callback.answer("Редактирование будет добавлено на следующем шаге.", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("lead:"))
+async def lead_action(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
+    parts = (callback.data or "").split(":")
+    if len(parts) < 3:
+        await callback.answer("Некорректное действие", show_alert=True)
+        return
+
+    action = parts[1]
+    try:
+        lead_id = UUID(parts[2])
+    except ValueError:
+        await callback.answer("Некорректный lead id", show_alert=True)
+        return
+
+    async with async_session_factory() as session:
+        user = await user_service.ensure_user(
+            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+        )
+        if not user.is_active or user.role not in CREATE_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="lead",
+                entity_id=str(lead_id),
+                payload={"reason": "LEAD_ACTION", "action": action},
+            )
+            await session.commit()
+            await callback.answer("Нет прав", show_alert=True)
+            return
+
+        lead = await lead_service.get_lead(session, lead_id)
+        if not lead:
+            await callback.answer("Заявка не найдена", show_alert=True)
+            return
+
+        if action in {"need_info", "spam"}:
+            if lead.status == LeadStatus.CONVERTED:
+                await callback.answer("Заявка уже конвертирована", show_alert=True)
+                return
+            status = LeadStatus.NEED_INFO if action == "need_info" else LeadStatus.SPAM
+            await lead_service.set_status(session, lead=lead, status=status, actor_id=user.id)
+            await session.commit()
+            await callback.message.edit_text(format_lead_card(lead), reply_markup=lead_request_keyboard(lead.id))
+            await callback.answer("Статус обновлен")
+            return
+
+        if action != "convert":
+            await callback.answer("Неизвестное действие", show_alert=True)
+            return
+
+        if lead.status in {LeadStatus.CONVERTED, LeadStatus.SPAM}:
+            await callback.answer("Нельзя оформить эту заявку", show_alert=True)
+            return
+
+        prefill = lead_service.build_ticket_prefill(lead)
+        private_state = FSMContext(
+            storage=state.storage,
+            key=StorageKey(
+                bot_id=bot.id,
+                chat_id=callback.from_user.id,
+                user_id=callback.from_user.id,
+            ),
+        )
+        await private_state.clear()
+        await private_state.update_data(
+            lead_id=str(lead.id),
+            lead_message_chat_id=callback.message.chat.id if callback.message else None,
+            lead_message_id=callback.message.message_id if callback.message else None,
+            **prefill,
+        )
+        await private_state.set_state(TicketCreateStates.category)
+        await bot.send_message(callback.from_user.id, "Выберите категорию:", reply_markup=await category_keyboard())
+        await callback.answer("Открываю оформление в личных сообщениях")

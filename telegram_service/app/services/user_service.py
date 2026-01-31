@@ -23,7 +23,9 @@ class UserService:
             return user
 
         role = UserRole.JUNIOR_ADMIN
-        if tg_user_id in self.settings.sys_admin_id_set():
+        if self.settings.super_admin is not None and tg_user_id == self.settings.super_admin:
+            role = UserRole.SUPER_ADMIN
+        elif tg_user_id in self.settings.sys_admin_id_set():
             role = UserRole.SYS_ADMIN
 
         user = User(id=tg_user_id, role=role, display_name=display_name, is_active=True)

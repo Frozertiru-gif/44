@@ -71,6 +71,7 @@ class Ticket(Base):
     executor_earned_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     admin_earned_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     project_take_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    transfer_confirmer = relationship("User", foreign_keys=[transfer_confirmed_by])
     junior_master = relationship("User", foreign_keys=[junior_master_id])
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

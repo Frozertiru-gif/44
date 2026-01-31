@@ -60,3 +60,12 @@ def transfer_approval_actions(ticket_id: int) -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="❌ Отклонить", callback_data=f"transfer_reject:{ticket_id}")],
         ]
     )
+
+
+def transfer_confirm_keyboard(ticket_id: int) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Да, подтвердить", callback_data=f"transfer_confirm_yes:{ticket_id}")],
+            [InlineKeyboardButton(text="↩️ Отмена", callback_data=f"transfer_confirm_no:{ticket_id}")],
+        ]
+    )

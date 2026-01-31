@@ -11,13 +11,16 @@ from openpyxl import Workbook
 from sqlalchemy import select
 
 from app.bot.handlers.permissions import FINANCE_EXPORT_ROLES, FINANCE_SUMMARY_ROLES, MANUAL_TX_ROLES, MASTER_ROLES
+from app.bot.keyboards.confirmations import confirm_action_keyboard
 from app.bot.keyboards.finance import period_keyboard, share_list_keyboard
 from app.bot.states.finance import FinanceStates
 from app.core.config import get_settings
 from app.db.enums import ProjectTransactionType, UserRole
 from app.db.models import User
 from app.db.session import async_session_factory
+from app.services.audit_service import AuditService
 from app.services.finance_service import FinanceService
+from app.services.project_settings_service import ProjectSettingsService
 from app.services.project_share_service import ProjectShareService
 from app.services.project_transaction_service import ProjectTransactionService
 from app.services.user_service import UserService
@@ -28,6 +31,8 @@ project_transaction_service = ProjectTransactionService()
 project_share_service = ProjectShareService()
 user_service = UserService()
 settings = get_settings()
+audit_service = AuditService()
+project_settings_service = ProjectSettingsService()
 
 
 def _parse_amount(value: str) -> Decimal | None:
@@ -74,6 +79,15 @@ async def master_money_start(message: Message, state: FSMContext) -> None:
         )
         await session.commit()
         if not user.is_active or user.role not in MASTER_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="finance",
+                entity_id=None,
+                payload={"reason": "MASTER_MONEY"},
+            )
+            await session.commit()
             await message.answer("У вас нет доступа к финансам мастера.")
             return
     await state.clear()
@@ -91,6 +105,15 @@ async def salary_start(message: Message, state: FSMContext) -> None:
             await message.answer("У вас нет доступа.")
             return
         if user.role not in {UserRole.ADMIN, UserRole.JUNIOR_MASTER, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN}:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="finance",
+                entity_id=None,
+                payload={"reason": "SALARY_VIEW"},
+            )
+            await session.commit()
             await message.answer("У вас нет доступа.")
             return
     await state.clear()
@@ -105,6 +128,15 @@ async def project_summary_start(message: Message, state: FSMContext) -> None:
         )
         await session.commit()
         if not user.is_active or user.role not in FINANCE_SUMMARY_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="finance",
+                entity_id=None,
+                payload={"reason": "FINANCE_SUMMARY"},
+            )
+            await session.commit()
             await message.answer("У вас нет доступа к сводке.")
             return
     await state.clear()
@@ -119,6 +151,15 @@ async def export_start(message: Message, state: FSMContext) -> None:
         )
         await session.commit()
         if not user.is_active or user.role not in FINANCE_EXPORT_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="finance",
+                entity_id=None,
+                payload={"reason": "FINANCE_EXPORT"},
+            )
+            await session.commit()
             await message.answer("У вас нет доступа к экспорту.")
             return
     await state.clear()
@@ -192,6 +233,15 @@ async def _start_transaction_flow(message: Message, state: FSMContext, transacti
         )
         await session.commit()
         if not user.is_active or user.role not in MANUAL_TX_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="finance",
+                entity_id=None,
+                payload={"reason": f"TX_{transaction_type.value}"},
+            )
+            await session.commit()
             await message.answer("У вас нет доступа к операциям.")
             return
     await state.clear()
@@ -266,6 +316,21 @@ async def transaction_date(message: Message, state: FSMContext) -> None:
             await state.clear()
             return
 
+        threshold = await project_settings_service.get_threshold(
+            session,
+            "large_expense",
+            default=10000,
+        )
+        if transaction_type == ProjectTransactionType.EXPENSE and amount >= Decimal(threshold):
+            await state.update_data(occurred_at=occurred_at)
+            await state.set_state(FinanceStates.transaction_confirm)
+            await message.answer(
+                "Вы уверены? Это действие нельзя отменить.",
+                reply_markup=confirm_action_keyboard("tx_confirm", "tx_cancel"),
+            )
+            await session.commit()
+            return
+
         await project_transaction_service.add_transaction(
             session,
             transaction_type=transaction_type,
@@ -281,6 +346,66 @@ async def transaction_date(message: Message, state: FSMContext) -> None:
     await message.answer("Операция добавлена.")
 
 
+@router.callback_query(F.data == "tx_cancel")
+async def transaction_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.answer("Операция отменена")
+
+
+@router.callback_query(F.data == "tx_confirm")
+async def transaction_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    transaction_type_raw = data.get("transaction_type")
+    amount = data.get("amount")
+    category = data.get("category")
+    comment = data.get("comment")
+    occurred_at = data.get("occurred_at")
+    if (
+        not isinstance(transaction_type_raw, str)
+        or not isinstance(amount, Decimal)
+        or not isinstance(category, str)
+        or not isinstance(occurred_at, datetime)
+    ):
+        await callback.answer("Сессия устарела", show_alert=True)
+        await state.clear()
+        return
+
+    transaction_type = ProjectTransactionType(transaction_type_raw)
+
+    async with async_session_factory() as session:
+        user = await user_service.ensure_user(
+            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+        )
+        if not user.is_active or user.role not in MANUAL_TX_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="finance",
+                entity_id=None,
+                payload={"reason": f"TX_{transaction_type.value}"},
+            )
+            await callback.answer("Нет доступа", show_alert=True)
+            await session.commit()
+            await state.clear()
+            return
+
+        await project_transaction_service.add_transaction(
+            session,
+            transaction_type=transaction_type,
+            amount=amount,
+            category=category,
+            comment=comment,
+            occurred_at=occurred_at,
+            created_by=user.id,
+        )
+        await session.commit()
+
+    await state.clear()
+    await callback.message.answer("Операция добавлена.")
+    await callback.answer()
+
+
 @router.message(F.text == "📌 Доли от кассы")
 async def shares_list(message: Message, state: FSMContext) -> None:
     async with async_session_factory() as session:
@@ -289,6 +414,15 @@ async def shares_list(message: Message, state: FSMContext) -> None:
         )
         await session.commit()
         if not actor.is_active or actor.role not in FINANCE_SUMMARY_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=actor.id,
+                action="PERMISSION_DENIED",
+                entity_type="project_share",
+                entity_id=None,
+                payload={"reason": "PROJECT_SHARE_LIST"},
+            )
+            await session.commit()
             await message.answer("У вас нет доступа к долям.")
             return
 
@@ -334,12 +468,44 @@ async def share_percent_set(message: Message, state: FSMContext) -> None:
         await state.clear()
         return
 
+    await state.update_data(share_percent=percent)
+    await state.set_state(FinanceStates.share_confirm)
+    await message.answer(
+        "Вы уверены? Это действие нельзя отменить.",
+        reply_markup=confirm_action_keyboard("share_confirm", "share_cancel"),
+    )
+
+
+@router.callback_query(F.data == "share_cancel")
+async def share_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.answer("Изменение отменено")
+
+
+@router.callback_query(F.data == "share_confirm")
+async def share_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    user_id = data.get("share_user_id")
+    percent = data.get("share_percent")
+    if not isinstance(user_id, int) or not isinstance(percent, Decimal):
+        await callback.answer("Сессия устарела", show_alert=True)
+        await state.clear()
+        return
+
     async with async_session_factory() as session:
         actor = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
         )
         if not actor.is_active or actor.role not in FINANCE_SUMMARY_ROLES:
-            await message.answer("Нет доступа.")
+            await audit_service.log_audit_event(
+                session,
+                actor_id=actor.id,
+                action="PERMISSION_DENIED",
+                entity_type="project_share",
+                entity_id=None,
+                payload={"reason": "PROJECT_SHARE_SET"},
+            )
+            await callback.answer("Нет доступа", show_alert=True)
             await session.commit()
             await state.clear()
             return
@@ -352,12 +518,13 @@ async def share_percent_set(message: Message, state: FSMContext) -> None:
                 actor_id=actor.id,
             )
         except ValueError as exc:
-            await message.answer(str(exc))
+            await callback.answer(str(exc), show_alert=True)
             return
         await session.commit()
 
     await state.clear()
-    await message.answer("Доля обновлена.")
+    await callback.message.answer("Доля обновлена.")
+    await callback.answer()
 
 
 async def _handle_flow(
@@ -378,6 +545,15 @@ async def _handle_flow(
 
         if flow == "master":
             if not user.is_active or user.role not in MASTER_ROLES:
+                await audit_service.log_audit_event(
+                    session,
+                    actor_id=user.id,
+                    action="PERMISSION_DENIED",
+                    entity_type="finance",
+                    entity_id=None,
+                    payload={"reason": "MASTER_MONEY"},
+                )
+                await session.commit()
                 await message.answer("Нет доступа.")
                 return
             summary = await finance_service.master_money(session, user.id, date_range=date_range)
@@ -393,6 +569,15 @@ async def _handle_flow(
 
         if flow == "salary":
             if not user.is_active:
+                await audit_service.log_audit_event(
+                    session,
+                    actor_id=user.id,
+                    action="PERMISSION_DENIED",
+                    entity_type="finance",
+                    entity_id=None,
+                    payload={"reason": "SALARY_VIEW"},
+                )
+                await session.commit()
                 await message.answer("Нет доступа.")
                 return
             if user.role == UserRole.ADMIN or user.role in FINANCE_SUMMARY_ROLES:
@@ -400,6 +585,15 @@ async def _handle_flow(
             elif user.role == UserRole.JUNIOR_MASTER:
                 amount = await finance_service.junior_salary(session, user.id, date_range=date_range)
             else:
+                await audit_service.log_audit_event(
+                    session,
+                    actor_id=user.id,
+                    action="PERMISSION_DENIED",
+                    entity_type="finance",
+                    entity_id=None,
+                    payload={"reason": "SALARY_VIEW"},
+                )
+                await session.commit()
                 await message.answer("Нет доступа.")
                 return
             await message.answer(f"💵 Моя зарплата\nПериод: {label}\nСумма: {amount}")
@@ -407,6 +601,15 @@ async def _handle_flow(
 
         if flow == "summary":
             if not user.is_active or user.role not in FINANCE_SUMMARY_ROLES:
+                await audit_service.log_audit_event(
+                    session,
+                    actor_id=user.id,
+                    action="PERMISSION_DENIED",
+                    entity_type="finance",
+                    entity_id=None,
+                    payload={"reason": "FINANCE_SUMMARY"},
+                )
+                await session.commit()
                 await message.answer("Нет доступа.")
                 return
             summary = await finance_service.project_summary(session, date_range=date_range)
@@ -431,6 +634,15 @@ async def _handle_flow(
 
         if flow == "export":
             if not user.is_active or user.role not in FINANCE_EXPORT_ROLES:
+                await audit_service.log_audit_event(
+                    session,
+                    actor_id=user.id,
+                    action="PERMISSION_DENIED",
+                    entity_type="finance",
+                    entity_id=None,
+                    payload={"reason": "FINANCE_EXPORT"},
+                )
+                await session.commit()
                 await message.answer("Нет доступа.")
                 return
             tickets = await finance_service.list_tickets_for_export(session, date_range=date_range)

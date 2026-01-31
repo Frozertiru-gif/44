@@ -7,6 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.handlers.permissions import USER_ADMIN_ROLES
+from app.bot.keyboards.confirmations import confirm_action_keyboard
 from app.bot.keyboards.users import user_list_keyboard, user_role_keyboard
 from app.bot.states.user_percent import UserPercentStates
 from app.db.enums import UserRole
@@ -197,31 +198,66 @@ async def user_percent_set(message: Message, state: FSMContext) -> None:
         await state.clear()
         return
 
+    await state.update_data(percent=percent)
+    await state.set_state(UserPercentStates.confirm)
+    await message.answer(
+        "Вы уверены? Это действие нельзя отменить.",
+        reply_markup=confirm_action_keyboard("user_percent_confirm", "user_percent_cancel"),
+    )
+
+
+@router.callback_query(F.data == "user_percent_cancel")
+async def user_percent_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.answer("Изменение отменено")
+
+
+@router.callback_query(F.data == "user_percent_confirm")
+async def user_percent_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    user_id = data.get("user_id")
+    percent_type = data.get("percent_type")
+    percent = data.get("percent")
+    if not isinstance(user_id, int) or percent_type not in {"master", "admin"} or not isinstance(percent, Decimal):
+        await callback.answer("Сессия устарела", show_alert=True)
+        await state.clear()
+        return
+
     async with async_session_factory() as session:
         actor = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
         )
         if not actor.is_active or actor.role not in USER_ADMIN_ROLES:
-            await message.answer("Нет прав.")
+            await audit_service.log_audit_event(
+                session,
+                actor_id=actor.id,
+                action="PERMISSION_DENIED",
+                entity_type="user",
+                entity_id=user_id,
+                payload={"reason": "SET_PERCENT"},
+            )
+            await callback.answer("Нет прав", show_alert=True)
             await session.commit()
             await state.clear()
             return
 
         target = await user_service.get_user(session, user_id)
         if not target:
-            await message.answer("Пользователь не найден.")
+            await callback.answer("Пользователь не найден.", show_alert=True)
             await state.clear()
             return
 
         try:
             if percent_type == "master":
+                before_value = target.master_percent
                 await user_service.set_master_percent(session, target, percent)
                 action = "USER_MASTER_PERCENT_SET"
             else:
+                before_value = target.admin_percent
                 await user_service.set_admin_percent(session, target, percent)
                 action = "USER_ADMIN_PERCENT_SET"
         except ValueError as exc:
-            await message.answer(str(exc))
+            await callback.answer(str(exc), show_alert=True)
             return
 
         await audit_service.log_audit_event(
@@ -230,9 +266,13 @@ async def user_percent_set(message: Message, state: FSMContext) -> None:
             action=action,
             entity_type="user",
             entity_id=target.id,
-            payload={"percent": float(percent)},
+            payload={
+                "before": {"percent": float(before_value)} if before_value is not None else None,
+                "after": {"percent": float(percent)},
+            },
         )
         await session.commit()
 
     await state.clear()
-    await message.answer("Процент обновлен.")
+    await callback.message.answer("Процент обновлен.")
+    await callback.answer()

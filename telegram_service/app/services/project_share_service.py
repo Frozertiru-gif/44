@@ -6,7 +6,8 @@ from decimal import Decimal
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models import ProjectShare
+from app.db.enums import UserRole
+from app.db.models import ProjectShare, User
 from app.services.audit_service import AuditService
 
 
@@ -22,11 +23,23 @@ class ProjectShareService:
         percent: Decimal,
         actor_id: int,
     ) -> ProjectShare:
+        actor = await session.get(User, actor_id)
+        if not actor or actor.role not in {UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN}:
+            await self._audit.log_audit_event(
+                session,
+                actor_id=actor_id,
+                action="PERMISSION_DENIED",
+                entity_type="project_share",
+                entity_id=None,
+                payload={"reason": "PROJECT_SHARE_SET"},
+            )
+            raise ValueError("Нет прав на изменение долей")
         percent = self._validate_percent(percent)
         existing = await session.execute(
             select(ProjectShare).where(ProjectShare.user_id == user_id, ProjectShare.is_active.is_(True))
         )
         current = existing.scalar_one_or_none()
+        before_percent = current.percent if current else None
         if current:
             current.is_active = False
 
@@ -45,7 +58,11 @@ class ProjectShareService:
             action="PROJECT_SHARE_SET",
             entity_type="project_share",
             entity_id=share.id,
-            payload={"user_id": user_id, "percent": float(percent)},
+            payload={
+                "before": {"percent": float(before_percent)} if before_percent is not None else None,
+                "after": {"percent": float(percent)},
+                "user_id": user_id,
+            },
         )
         return share
 

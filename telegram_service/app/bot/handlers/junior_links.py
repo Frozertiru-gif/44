@@ -7,6 +7,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.handlers.permissions import JUNIOR_LINK_ADMIN_ROLES
+from app.bot.keyboards.confirmations import confirm_action_keyboard
 from app.bot.keyboards.junior_links import (
     junior_select_keyboard,
     master_links_keyboard,
@@ -17,12 +18,14 @@ from app.bot.states.junior_links import JuniorLinkStates
 from app.db.enums import UserRole
 from app.db.models import MasterJuniorLink
 from app.db.session import async_session_factory
+from app.services.audit_service import AuditService
 from app.services.junior_link_service import JuniorLinkService
 from app.services.user_service import UserService
 
 router = Router()
 user_service = UserService()
 junior_link_service = JuniorLinkService()
+audit_service = AuditService()
 
 
 def parse_percent(value: str) -> Decimal | None:
@@ -44,6 +47,15 @@ async def junior_links_menu(message: Message, state: FSMContext) -> None:
         await session.commit()
 
         if not user.is_active:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="master_junior_link",
+                entity_id=None,
+                payload={"reason": "JUNIOR_LINK_MENU"},
+            )
+            await session.commit()
             await message.answer("У вас нет доступа.")
             return
 
@@ -78,7 +90,10 @@ async def link_master_card(callback: CallbackQuery) -> None:
         actor = await user_service.ensure_user(
             session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
         )
-        if not actor.is_active or actor.role not in JUNIOR_LINK_ADMIN_ROLES:
+        if not actor.is_active:
+            await callback.answer("Нет прав", show_alert=True)
+            return
+        if action in {"add", "relink", "disable"} and actor.role not in JUNIOR_LINK_ADMIN_ROLES:
             await callback.answer("Нет прав", show_alert=True)
             return
 
@@ -109,6 +124,15 @@ async def link_back(callback: CallbackQuery) -> None:
             session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
         )
         if not actor.is_active or actor.role not in JUNIOR_LINK_ADMIN_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=actor.id,
+                action="PERMISSION_DENIED",
+                entity_type="master_junior_link",
+                entity_id=master_id,
+                payload={"reason": "JUNIOR_LINK_VIEW"},
+            )
+            await session.commit()
             await callback.answer("Нет прав", show_alert=True)
             return
 
@@ -126,6 +150,15 @@ async def link_add(callback: CallbackQuery, state: FSMContext) -> None:
             session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
         )
         if not actor.is_active or actor.role not in JUNIOR_LINK_ADMIN_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=actor.id,
+                action="PERMISSION_DENIED",
+                entity_type="master_junior_link",
+                entity_id=None,
+                payload={"reason": "JUNIOR_LINK_BACK"},
+            )
+            await session.commit()
             await callback.answer("Нет прав", show_alert=True)
             return
 
@@ -172,6 +205,15 @@ async def link_relink(callback: CallbackQuery, state: FSMContext) -> None:
             session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
         )
         if not actor.is_active or actor.role not in JUNIOR_LINK_ADMIN_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=actor.id,
+                action="PERMISSION_DENIED",
+                entity_type="master_junior_link",
+                entity_id=link_id,
+                payload={"reason": "JUNIOR_LINK_RELINK"},
+            )
+            await session.commit()
             await callback.answer("Нет прав", show_alert=True)
             return
         link = await session.get(MasterJuniorLink, link_id)
@@ -204,23 +246,103 @@ async def link_relink_master(callback: CallbackQuery, state: FSMContext) -> None
 
 
 @router.callback_query(F.data.startswith("link_disable:"))
-async def link_disable(callback: CallbackQuery) -> None:
+async def link_disable(callback: CallbackQuery, state: FSMContext) -> None:
     link_id = int(callback.data.split(":", 1)[1])
+    await state.clear()
+    await state.update_data(action="disable", link_id=link_id)
+    await state.set_state(JuniorLinkStates.confirm)
+    await callback.message.answer(
+        "Вы уверены? Это действие нельзя отменить.",
+        reply_markup=confirm_action_keyboard("link_confirm", "link_cancel"),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "link_cancel")
+async def link_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    await callback.answer("Действие отменено")
+
+
+@router.callback_query(F.data == "link_confirm")
+async def link_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    action = data.get("action")
+    link_id = data.get("link_id")
+    percent = data.get("percent")
+    master_id = data.get("master_id")
+    junior_id = data.get("junior_id")
+    if action not in {"add", "percent", "relink", "disable"}:
+        await callback.answer("Сессия устарела", show_alert=True)
+        await state.clear()
+        return
+
     async with async_session_factory() as session:
         actor = await user_service.ensure_user(
             session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
         )
-        if not actor.is_active or actor.role not in JUNIOR_LINK_ADMIN_ROLES:
+        if not actor.is_active:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=actor.id,
+                action="PERMISSION_DENIED",
+                entity_type="master_junior_link",
+                entity_id=link_id if isinstance(link_id, int) else None,
+                payload={"reason": "JUNIOR_LINK_CONFIRM"},
+            )
+            await session.commit()
+            await callback.answer("Нет прав", show_alert=True)
+            return
+        if action in {"add", "relink", "disable"} and actor.role not in JUNIOR_LINK_ADMIN_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=actor.id,
+                action="PERMISSION_DENIED",
+                entity_type="master_junior_link",
+                entity_id=link_id if isinstance(link_id, int) else None,
+                payload={"reason": "JUNIOR_LINK_CONFIRM"},
+            )
+            await session.commit()
             await callback.answer("Нет прав", show_alert=True)
             return
         try:
             async with session.begin():
-                await junior_link_service.disable_link(session, link_id=link_id, actor_id=actor.id)
+                if action == "disable" and isinstance(link_id, int):
+                    await junior_link_service.disable_link(session, link_id=link_id, actor_id=actor.id)
+                elif action == "add" and isinstance(master_id, int) and isinstance(junior_id, int) and isinstance(percent, Decimal):
+                    await junior_link_service.link_junior_to_master(
+                        session,
+                        master_id=master_id,
+                        junior_id=junior_id,
+                        percent=percent,
+                        actor_id=actor.id,
+                    )
+                elif action == "percent" and isinstance(link_id, int) and isinstance(percent, Decimal):
+                    await junior_link_service.set_link_percent(
+                        session,
+                        link_id=link_id,
+                        percent=percent,
+                        actor_id=actor.id,
+                    )
+                elif action == "relink" and isinstance(master_id, int) and isinstance(junior_id, int) and isinstance(percent, Decimal):
+                    await junior_link_service.relink_junior(
+                        session,
+                        junior_id=junior_id,
+                        new_master_id=master_id,
+                        percent=percent,
+                        actor_id=actor.id,
+                    )
+                else:
+                    await callback.answer("Сессия устарела", show_alert=True)
+                    await state.clear()
+                    return
         except ValueError as exc:
             await callback.answer(str(exc), show_alert=True)
             return
 
-    await callback.answer("Привязка отключена")
+    await state.clear()
+    await callback.message.answer("Данные сохранены.")
+    await callback.answer()
 
 
 @router.message(JuniorLinkStates.percent)
@@ -235,48 +357,9 @@ async def link_percent_input(message: Message, state: FSMContext) -> None:
     link_id = data.get("link_id")
     master_id = data.get("master_id")
     junior_id = data.get("junior_id")
-
-    async with async_session_factory() as session:
-        actor = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
-        )
-        if not actor.is_active:
-            await message.answer("Нет доступа.")
-            await state.clear()
-            return
-
-        try:
-            async with session.begin():
-                if action == "add" and isinstance(master_id, int) and isinstance(junior_id, int):
-                    await junior_link_service.link_junior_to_master(
-                        session,
-                        master_id=master_id,
-                        junior_id=junior_id,
-                        percent=percent,
-                        actor_id=actor.id,
-                    )
-                elif action == "percent" and isinstance(link_id, int):
-                    await junior_link_service.set_link_percent(
-                        session,
-                        link_id=link_id,
-                        percent=percent,
-                        actor_id=actor.id,
-                    )
-                elif action == "relink" and isinstance(master_id, int) and isinstance(junior_id, int):
-                    await junior_link_service.relink_junior(
-                        session,
-                        junior_id=junior_id,
-                        new_master_id=master_id,
-                        percent=percent,
-                        actor_id=actor.id,
-                    )
-                else:
-                    await message.answer("Сессия устарела.")
-                    await state.clear()
-                    return
-        except ValueError as exc:
-            await message.answer(str(exc))
-            return
-
-    await state.clear()
-    await message.answer("Данные сохранены.")
+    await state.update_data(percent=percent)
+    await state.set_state(JuniorLinkStates.confirm)
+    await message.answer(
+        "Вы уверены? Это действие нельзя отменить.",
+        reply_markup=confirm_action_keyboard("link_confirm", "link_cancel"),
+    )

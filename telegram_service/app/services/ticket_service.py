@@ -116,7 +116,9 @@ class TicketService:
 
     async def get_ticket(self, session: AsyncSession, ticket_id: int) -> Ticket | None:
         result = await session.execute(
-            select(Ticket).options(selectinload(Ticket.assigned_executor)).where(Ticket.id == ticket_id)
+            select(Ticket)
+            .options(selectinload(Ticket.assigned_executor), selectinload(Ticket.junior_master))
+            .where(Ticket.id == ticket_id)
         )
         return result.scalar_one_or_none()
 
@@ -181,20 +183,20 @@ class TicketService:
         *,
         revenue: Decimal,
         expense: Decimal,
+        junior_master_id: int | None,
+        junior_master_percent: Decimal | None,
+        allow_override: bool = False,
     ) -> Ticket | None:
         now = datetime.utcnow()
         net_profit = revenue - expense
         if net_profit < 0:
             net_profit = Decimal("0")
         allowed = [TicketStatus.TAKEN, TicketStatus.IN_PROGRESS, TicketStatus.WAITING]
+        query = update(Ticket).where(Ticket.id == ticket_id, Ticket.status.in_(allowed))
+        if not allow_override:
+            query = query.where(Ticket.assigned_executor_id == actor_id)
         result = await session.execute(
-            update(Ticket)
-            .where(
-                Ticket.id == ticket_id,
-                Ticket.assigned_executor_id == actor_id,
-                Ticket.status.in_(allowed),
-            )
-            .values(
+            query.values(
                 status=TicketStatus.CLOSED,
                 closed_at=now,
                 revenue=revenue,
@@ -204,6 +206,8 @@ class TicketService:
                 transfer_sent_at=None,
                 transfer_confirmed_at=None,
                 transfer_confirmed_by=None,
+                junior_master_id=junior_master_id,
+                junior_master_percent_at_close=junior_master_percent,
                 updated_at=now,
             )
         )
@@ -220,6 +224,10 @@ class TicketService:
                     "revenue": float(revenue),
                     "expense": float(expense),
                     "net_profit": float(net_profit),
+                    "junior_master_id": junior_master_id,
+                    "junior_master_percent": float(junior_master_percent)
+                    if junior_master_percent is not None
+                    else None,
                 },
             )
         return ticket
@@ -278,6 +286,25 @@ class TicketService:
 
     async def get_ticket_with_executor(self, session: AsyncSession, ticket_id: int) -> Ticket | None:
         result = await session.execute(
-            select(Ticket).options(selectinload(Ticket.assigned_executor)).where(Ticket.id == ticket_id)
+            select(Ticket)
+            .options(selectinload(Ticket.assigned_executor), selectinload(Ticket.junior_master))
+            .where(Ticket.id == ticket_id)
         )
         return result.scalar_one_or_none()
+
+    async def list_for_master(
+        self,
+        session: AsyncSession,
+        master_id: int,
+        *,
+        statuses: list[TicketStatus],
+        limit: int = 20,
+    ) -> list[Ticket]:
+        result = await session.execute(
+            select(Ticket)
+            .options(selectinload(Ticket.assigned_executor), selectinload(Ticket.junior_master))
+            .where(Ticket.assigned_executor_id == master_id, Ticket.status.in_(statuses))
+            .order_by(Ticket.id.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())

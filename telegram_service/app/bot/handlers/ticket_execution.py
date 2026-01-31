@@ -16,6 +16,7 @@ from app.bot.handlers.utils import (
 from app.bot.keyboards.main_menu import build_main_menu
 from app.bot.keyboards.ticket_execution import (
     active_ticket_actions,
+    close_junior_keyboard,
     close_confirm_keyboard,
     closed_ticket_actions,
     queue_ticket_actions,
@@ -23,15 +24,17 @@ from app.bot.keyboards.ticket_execution import (
 )
 from app.bot.states.ticket_close import TicketCloseStates
 from app.core.config import get_settings
-from app.db.enums import TicketStatus, TransferStatus
+from app.db.enums import TicketStatus, TransferStatus, UserRole
 from app.db.session import async_session_factory
 from app.services.ticket_service import TicketService
+from app.services.junior_link_service import JuniorLinkService
 from app.services.user_service import UserService
 
 router = Router()
 settings = get_settings()
 user_service = UserService()
 ticket_service = TicketService()
+junior_link_service = JuniorLinkService()
 
 
 def parse_amount(value: str) -> Decimal | None:
@@ -184,7 +187,13 @@ async def close_start(callback: CallbackQuery, state: FSMContext) -> None:
             return
 
         ticket = await ticket_service.get_ticket(session, ticket_id)
-        if not ticket or ticket.assigned_executor_id != user.id:
+        if not ticket:
+            await callback.answer("Заказ не найден", show_alert=True)
+            return
+        if not ticket.assigned_executor_id:
+            await callback.answer("Нет исполнителя для закрытия", show_alert=True)
+            return
+        if user.role not in {UserRole.SYS_ADMIN, UserRole.SUPER_ADMIN} and ticket.assigned_executor_id != user.id:
             await callback.answer("Нет прав на закрытие", show_alert=True)
             return
         if ticket.status not in {TicketStatus.TAKEN, TicketStatus.IN_PROGRESS, TicketStatus.WAITING}:
@@ -192,7 +201,7 @@ async def close_start(callback: CallbackQuery, state: FSMContext) -> None:
             return
 
     await state.clear()
-    await state.update_data(ticket_id=ticket_id)
+    await state.update_data(ticket_id=ticket_id, executor_id=ticket.assigned_executor_id)
     await state.set_state(TicketCloseStates.revenue)
     await callback.message.answer("Введите доход по заказу:")
     await callback.answer()
@@ -229,10 +238,27 @@ async def close_expense(message: Message, state: FSMContext) -> None:
         net_profit = Decimal("0")
 
     await state.update_data(expense=amount, net_profit=net_profit)
-    await state.set_state(TicketCloseStates.confirm)
+    data = await state.get_data()
+    executor_id = data.get("executor_id")
+    if not isinstance(executor_id, int):
+        await message.answer("Не найден исполнитель заказа.")
+        await state.clear()
+        return
+
+    async with async_session_factory() as session:
+        links = await junior_link_service.get_active_juniors_for_master(session, executor_id)
+
+    options = []
+    for link in links:
+        junior = link.junior_master
+        label = junior.display_name if junior else f"ID {link.junior_master_id}"
+        options.append((link.junior_master_id, label, f"{link.percent:.2f}"))
+
+    await state.set_state(TicketCloseStates.junior)
     await message.answer(
-        f"Доход: {revenue}\nРасход: {amount}\nЧистая прибыль: {net_profit}",
-        reply_markup=close_confirm_keyboard(),
+        f"Доход: {revenue}\nРасход: {amount}\nЧистая прибыль: {net_profit}\n\n"
+        f"Выберите младшего мастера:",
+        reply_markup=close_junior_keyboard(options),
     )
 
 
@@ -243,12 +269,51 @@ async def close_edit(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+@router.callback_query(F.data.startswith("close_junior:"))
+async def close_select_junior(callback: CallbackQuery, state: FSMContext) -> None:
+    choice = callback.data.split(":", 1)[1]
+    data = await state.get_data()
+    executor_id = data.get("executor_id")
+    revenue = data.get("revenue")
+    expense = data.get("expense")
+    net_profit = data.get("net_profit")
+    if not isinstance(executor_id, int):
+        await callback.answer("Сессия закрытия устарела", show_alert=True)
+        await state.clear()
+        return
+
+    junior_id = None
+    junior_percent = None
+    junior_label = "Без младшего мастера"
+    if choice != "none":
+        junior_id = int(choice)
+        async with async_session_factory() as session:
+            link = await junior_link_service.get_active_link(session, executor_id, junior_id)
+        if not link:
+            await callback.answer("Младший мастер недоступен", show_alert=True)
+            return
+        junior_percent = link.percent
+        junior = link.junior_master
+        junior_label = junior.display_name if junior else f"ID {junior_id}"
+
+    await state.update_data(junior_master_id=junior_id, junior_master_percent=junior_percent)
+    await state.set_state(TicketCloseStates.confirm)
+    await callback.message.answer(
+        f"Доход: {revenue}\nРасход: {expense}\nЧистая прибыль: {net_profit}\n"
+        f"Младший мастер: {junior_label}",
+        reply_markup=close_confirm_keyboard(),
+    )
+    await callback.answer()
+
+
 @router.callback_query(F.data == "close_confirm")
 async def close_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
     data = await state.get_data()
     ticket_id = data.get("ticket_id")
     revenue = data.get("revenue")
     expense = data.get("expense")
+    junior_master_id = data.get("junior_master_id")
+    junior_master_percent = data.get("junior_master_percent")
     if not isinstance(ticket_id, int) or not isinstance(revenue, Decimal) or not isinstance(expense, Decimal):
         await callback.answer("Сессия закрытия устарела", show_alert=True)
         await state.clear()
@@ -271,6 +336,9 @@ async def close_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
                 user.id,
                 revenue=revenue,
                 expense=expense,
+                junior_master_id=junior_master_id,
+                junior_master_percent=junior_master_percent,
+                allow_override=user.role in {UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN},
             )
 
         if not ticket:

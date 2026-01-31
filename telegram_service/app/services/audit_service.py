@@ -15,7 +15,7 @@ class AuditService:
         payload: dict[str, Any] | None,
         actor_id: int | None,
         ticket_id: int | None = None,
-        entity_id: int | None = None,
+        entity_id: str | int | None = None,
     ) -> dict[str, Any]:
         enriched = dict(payload or {})
         enriched.setdefault("actor_id", actor_id)
@@ -52,7 +52,7 @@ class AuditService:
         actor_id: int | None,
         action: str,
         entity_type: str,
-        entity_id: int | None,
+        entity_id: str | int | None,
         payload: dict[str, Any] | None = None,
         ticket_id: int | None = None,
     ) -> AuditEvent:

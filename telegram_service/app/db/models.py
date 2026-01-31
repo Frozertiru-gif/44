@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 from datetime import datetime
+from uuid import UUID as UUIDType
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, JSON, Numeric, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Index, JSON, Numeric, String, Text, text
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
-from app.db.enums import AdSource, ProjectTransactionType, TicketCategory, TicketStatus, TransferStatus, UserRole
+from app.db.enums import AdSource, LeadAdSource, LeadStatus, ProjectTransactionType, TicketCategory, TicketStatus, TransferStatus, UserRole
 
 
 class User(Base):
@@ -73,6 +75,36 @@ class Ticket(Base):
     events = relationship("TicketEvent", back_populates="ticket")
 
 
+class Lead(Base):
+    __tablename__ = "leads"
+    __table_args__ = (
+        Index("ix_leads_status_created_at", "status", text("created_at DESC")),
+        Index(
+            "ix_leads_client_phone_created_at",
+            "client_phone",
+            text("created_at DESC"),
+            postgresql_where=text("client_phone IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[UUIDType] = mapped_column(UUID(as_uuid=True), primary_key=True)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    client_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    client_phone: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    preferred_datetime: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    client_age_estimate: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    problem_text: Mapped[str] = mapped_column(Text, nullable=False)
+    special_note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ad_source: Mapped[LeadAdSource | None] = mapped_column(Enum(LeadAdSource, name="lead_ad_source"), nullable=True)
+    status: Mapped[LeadStatus] = mapped_column(Enum(LeadStatus, name="lead_status"), nullable=False)
+    meta: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    converted_ticket_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("tickets.id"), nullable=True)
+
+    converted_ticket = relationship("Ticket", foreign_keys=[converted_ticket_id])
+
+
 class MasterJuniorLink(Base):
     __tablename__ = "master_junior_links"
 
@@ -109,7 +141,7 @@ class AuditEvent(Base):
     actor_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
     action: Mapped[str] = mapped_column(String(100), nullable=False)
     entity_type: Mapped[str] = mapped_column(String(100), nullable=False)
-    entity_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    entity_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     payload: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

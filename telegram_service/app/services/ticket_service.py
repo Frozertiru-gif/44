@@ -1,16 +1,22 @@
 from __future__ import annotations
 
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
-from app.db.enums import AdSource, TicketCategory, TicketStatus
+from app.db.enums import AdSource, TicketCategory, TicketStatus, TransferStatus
 from app.db.models import Ticket
+from app.services.audit_service import AuditService
 
 
 class TicketService:
+    def __init__(self) -> None:
+        self._audit = AuditService()
+
     async def search_by_phone(self, session: AsyncSession, phone: str, limit: int = 5) -> list[Ticket]:
         result = await session.execute(
             select(Ticket).where(Ticket.client_phone == phone).order_by(Ticket.id.desc()).limit(limit)
@@ -64,6 +70,44 @@ class TicketService:
         )
         return list(result.scalars().all())
 
+    async def list_queue(self, session: AsyncSession, limit: int = 20) -> list[Ticket]:
+        result = await session.execute(
+            select(Ticket)
+            .where(Ticket.status == TicketStatus.READY_FOR_WORK, Ticket.assigned_executor_id.is_(None))
+            .order_by(Ticket.id.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def list_my_active(self, session: AsyncSession, executor_id: int, limit: int = 20) -> list[Ticket]:
+        statuses = [TicketStatus.TAKEN, TicketStatus.IN_PROGRESS, TicketStatus.WAITING]
+        result = await session.execute(
+            select(Ticket)
+            .where(Ticket.assigned_executor_id == executor_id, Ticket.status.in_(statuses))
+            .order_by(Ticket.id.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def list_my_closed(self, session: AsyncSession, executor_id: int, limit: int = 20) -> list[Ticket]:
+        result = await session.execute(
+            select(Ticket)
+            .where(Ticket.assigned_executor_id == executor_id, Ticket.status == TicketStatus.CLOSED)
+            .order_by(Ticket.id.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
+    async def list_transfer_pending(self, session: AsyncSession, limit: int = 20) -> list[Ticket]:
+        result = await session.execute(
+            select(Ticket)
+            .options(selectinload(Ticket.assigned_executor))
+            .where(Ticket.transfer_status == TransferStatus.SENT)
+            .order_by(Ticket.id.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())
+
     async def list_repeats(self, session: AsyncSession, limit: int = 20) -> list[Ticket]:
         result = await session.execute(
             select(Ticket).where(Ticket.is_repeat.is_(True)).order_by(Ticket.id.desc()).limit(limit)
@@ -71,10 +115,169 @@ class TicketService:
         return list(result.scalars().all())
 
     async def get_ticket(self, session: AsyncSession, ticket_id: int) -> Ticket | None:
-        result = await session.execute(select(Ticket).where(Ticket.id == ticket_id))
+        result = await session.execute(
+            select(Ticket).options(selectinload(Ticket.assigned_executor)).where(Ticket.id == ticket_id)
+        )
         return result.scalar_one_or_none()
 
     async def cancel_ticket(self, session: AsyncSession, ticket: Ticket) -> Ticket:
         ticket.status = TicketStatus.CANCELLED
         await session.flush()
         return ticket
+
+    async def take_ticket(self, session: AsyncSession, ticket_id: int, actor_id: int) -> Ticket | None:
+        now = datetime.utcnow()
+        result = await session.execute(
+            update(Ticket)
+            .where(
+                Ticket.id == ticket_id,
+                Ticket.status == TicketStatus.READY_FOR_WORK,
+                Ticket.assigned_executor_id.is_(None),
+            )
+            .values(
+                assigned_executor_id=actor_id,
+                status=TicketStatus.TAKEN,
+                taken_at=now,
+                updated_at=now,
+            )
+        )
+        if result.rowcount == 0:
+            return None
+        ticket = await self.get_ticket_with_executor(session, ticket_id)
+        if ticket:
+            await self._audit.log_event(session, ticket_id=ticket.id, action="TICKET_TAKEN", actor_id=actor_id)
+        return ticket
+
+    async def set_in_progress(self, session: AsyncSession, ticket_id: int, actor_id: int) -> Ticket | None:
+        now = datetime.utcnow()
+        allowed = [TicketStatus.TAKEN, TicketStatus.WAITING]
+        result = await session.execute(
+            update(Ticket)
+            .where(
+                Ticket.id == ticket_id,
+                Ticket.assigned_executor_id == actor_id,
+                Ticket.status.in_(allowed),
+            )
+            .values(status=TicketStatus.IN_PROGRESS, updated_at=now)
+        )
+        if result.rowcount == 0:
+            return None
+        ticket = await self.get_ticket_with_executor(session, ticket_id)
+        if ticket:
+            await self._audit.log_event(
+                session,
+                ticket_id=ticket.id,
+                action="TICKET_STATUS_UPDATED",
+                actor_id=actor_id,
+                payload={"status": TicketStatus.IN_PROGRESS.value},
+            )
+        return ticket
+
+    async def close_ticket(
+        self,
+        session: AsyncSession,
+        ticket_id: int,
+        actor_id: int,
+        *,
+        revenue: Decimal,
+        expense: Decimal,
+    ) -> Ticket | None:
+        now = datetime.utcnow()
+        net_profit = revenue - expense
+        if net_profit < 0:
+            net_profit = Decimal("0")
+        allowed = [TicketStatus.TAKEN, TicketStatus.IN_PROGRESS, TicketStatus.WAITING]
+        result = await session.execute(
+            update(Ticket)
+            .where(
+                Ticket.id == ticket_id,
+                Ticket.assigned_executor_id == actor_id,
+                Ticket.status.in_(allowed),
+            )
+            .values(
+                status=TicketStatus.CLOSED,
+                closed_at=now,
+                revenue=revenue,
+                expense=expense,
+                net_profit=net_profit,
+                transfer_status=TransferStatus.NOT_SENT,
+                transfer_sent_at=None,
+                transfer_confirmed_at=None,
+                transfer_confirmed_by=None,
+                updated_at=now,
+            )
+        )
+        if result.rowcount == 0:
+            return None
+        ticket = await self.get_ticket_with_executor(session, ticket_id)
+        if ticket:
+            await self._audit.log_event(
+                session,
+                ticket_id=ticket.id,
+                action="TICKET_CLOSED",
+                actor_id=actor_id,
+                payload={
+                    "revenue": float(revenue),
+                    "expense": float(expense),
+                    "net_profit": float(net_profit),
+                },
+            )
+        return ticket
+
+    async def mark_transfer_sent(self, session: AsyncSession, ticket_id: int, actor_id: int) -> Ticket | None:
+        now = datetime.utcnow()
+        result = await session.execute(
+            update(Ticket)
+            .where(
+                Ticket.id == ticket_id,
+                Ticket.assigned_executor_id == actor_id,
+                Ticket.status == TicketStatus.CLOSED,
+                Ticket.transfer_status == TransferStatus.NOT_SENT,
+            )
+            .values(transfer_status=TransferStatus.SENT, transfer_sent_at=now, updated_at=now)
+        )
+        if result.rowcount == 0:
+            return None
+        ticket = await self.get_ticket_with_executor(session, ticket_id)
+        if ticket:
+            await self._audit.log_event(
+                session,
+                ticket_id=ticket.id,
+                action="TRANSFER_SENT",
+                actor_id=actor_id,
+            )
+        return ticket
+
+    async def confirm_transfer(
+        self,
+        session: AsyncSession,
+        ticket_id: int,
+        actor_id: int,
+        *,
+        approved: bool,
+    ) -> Ticket | None:
+        now = datetime.utcnow()
+        status = TransferStatus.CONFIRMED if approved else TransferStatus.REJECTED
+        action = "TRANSFER_CONFIRMED" if approved else "TRANSFER_REJECTED"
+        result = await session.execute(
+            update(Ticket)
+            .where(Ticket.id == ticket_id, Ticket.transfer_status == TransferStatus.SENT)
+            .values(
+                transfer_status=status,
+                transfer_confirmed_by=actor_id,
+                transfer_confirmed_at=now,
+                updated_at=now,
+            )
+        )
+        if result.rowcount == 0:
+            return None
+        ticket = await self.get_ticket_with_executor(session, ticket_id)
+        if ticket:
+            await self._audit.log_event(session, ticket_id=ticket.id, action=action, actor_id=actor_id)
+        return ticket
+
+    async def get_ticket_with_executor(self, session: AsyncSession, ticket_id: int) -> Ticket | None:
+        result = await session.execute(
+            select(Ticket).options(selectinload(Ticket.assigned_executor)).where(Ticket.id == ticket_id)
+        )
+        return result.scalar_one_or_none()

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -50,3 +52,24 @@ class UserService:
         user.is_active = is_active
         await session.flush()
         return user
+
+    async def set_master_percent(self, session: AsyncSession, user: User, percent: Decimal | None) -> User:
+        if percent is not None:
+            percent = self._validate_percent(percent)
+        user.master_percent = percent
+        await session.flush()
+        return user
+
+    async def set_admin_percent(self, session: AsyncSession, user: User, percent: Decimal | None) -> User:
+        if percent is not None:
+            percent = self._validate_percent(percent)
+        user.admin_percent = percent
+        await session.flush()
+        return user
+
+    def _validate_percent(self, percent: Decimal) -> Decimal:
+        if percent < 0 or percent > 100:
+            raise ValueError("Процент должен быть от 0 до 100")
+        if percent.as_tuple().exponent < -2:
+            raise ValueError("Процент должен иметь максимум 2 знака после запятой")
+        return percent

@@ -42,3 +42,8 @@ class TransferStatus(str, Enum):
     SENT = "SENT"
     CONFIRMED = "CONFIRMED"
     REJECTED = "REJECTED"
+
+
+class ProjectTransactionType(str, Enum):
+    INCOME = "INCOME"
+    EXPENSE = "EXPENSE"

@@ -144,3 +144,15 @@ class ProjectShare(Base):
 
     user = relationship("User", foreign_keys=[user_id])
     setter = relationship("User", foreign_keys=[set_by])
+
+
+class ProjectSettings(Base):
+    __tablename__ = "project_settings"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    requests_chat_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    currency: Mapped[str] = mapped_column(String(16), default="RUB")
+    rounding_mode: Mapped[str] = mapped_column(String(32), default="HALF_UP")
+    thresholds: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

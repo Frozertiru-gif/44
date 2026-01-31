@@ -21,11 +21,14 @@ from app.bot.keyboards.ticket_execution import (
     closed_ticket_actions,
     queue_ticket_actions,
     transfer_approval_actions,
+    transfer_confirm_keyboard,
 )
 from app.bot.states.ticket_close import TicketCloseStates
 from app.core.config import get_settings
 from app.db.enums import TicketStatus, TransferStatus, UserRole
 from app.db.session import async_session_factory
+from app.services.audit_service import AuditService
+from app.services.project_settings_service import ProjectSettingsService
 from app.services.ticket_service import TicketService
 from app.services.junior_link_service import JuniorLinkService
 from app.services.user_service import UserService
@@ -35,6 +38,8 @@ settings = get_settings()
 user_service = UserService()
 ticket_service = TicketService()
 junior_link_service = JuniorLinkService()
+audit_service = AuditService()
+project_settings_service = ProjectSettingsService()
 
 
 def parse_amount(value: str) -> Decimal | None:
@@ -56,6 +61,15 @@ async def queue_list(message: Message) -> None:
         )
         await session.commit()
         if not user.is_active or user.role not in MASTER_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="ticket",
+                entity_id=None,
+                payload={"reason": "QUEUE_LIST"},
+            )
+            await session.commit()
             await message.answer("У вас нет доступа к очереди.")
             return
 
@@ -72,12 +86,22 @@ async def queue_list(message: Message) -> None:
 @router.callback_query(F.data.startswith("queue_take:"))
 async def queue_take(callback: CallbackQuery, bot: Bot) -> None:
     ticket_id = int(callback.data.split(":", 1)[1])
+    requests_chat_id = settings.requests_chat_id
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
             session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
         )
         if not user.is_active or user.role not in MASTER_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="ticket",
+                entity_id=ticket_id,
+                payload={"reason": "TAKE_TICKET"},
+                ticket_id=ticket_id,
+            )
             await callback.answer("Нет доступа", show_alert=True)
             await session.commit()
             return
@@ -86,11 +110,13 @@ async def queue_take(callback: CallbackQuery, bot: Bot) -> None:
             ticket = await ticket_service.take_ticket(session, ticket_id, user.id)
 
         if not ticket:
-            await callback.answer("Заказ уже принят", show_alert=True)
+            await callback.answer("Заказ уже принят или недоступен.", show_alert=True)
             return
 
+        requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
+
     await callback.message.edit_text(format_ticket_card(ticket))
-    await bot.send_message(settings.requests_chat_id, format_ticket_card(ticket))
+    await bot.send_message(requests_chat_id, format_ticket_card(ticket))
     await callback.answer("Заказ принят")
 
 
@@ -102,6 +128,15 @@ async def my_active(message: Message) -> None:
         )
         await session.commit()
         if not user.is_active or user.role not in MASTER_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="ticket",
+                entity_id=None,
+                payload={"reason": "LIST_ACTIVE"},
+            )
+            await session.commit()
             await message.answer("У вас нет доступа к активным заказам.")
             return
 
@@ -113,12 +148,13 @@ async def my_active(message: Message) -> None:
 
     for ticket in tickets:
         show_progress = ticket.status != TicketStatus.IN_PROGRESS
+        show_close = ticket.status == TicketStatus.IN_PROGRESS
         await message.answer(
             format_active_ticket_card(ticket),
             reply_markup=active_ticket_actions(
                 ticket.id,
                 show_in_progress=show_progress,
-                show_close=True,
+                show_close=show_close,
             ),
         )
 
@@ -131,6 +167,15 @@ async def my_closed(message: Message) -> None:
         )
         await session.commit()
         if not user.is_active or user.role not in MASTER_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="ticket",
+                entity_id=None,
+                payload={"reason": "LIST_CLOSED"},
+            )
+            await session.commit()
             await message.answer("У вас нет доступа к закрытым заказам.")
             return
 
@@ -151,12 +196,22 @@ async def my_closed(message: Message) -> None:
 @router.callback_query(F.data.startswith("status_progress:"))
 async def status_in_progress(callback: CallbackQuery, bot: Bot) -> None:
     ticket_id = int(callback.data.split(":", 1)[1])
+    requests_chat_id = settings.requests_chat_id
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
             session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
         )
         if not user.is_active or user.role not in MASTER_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="ticket",
+                entity_id=ticket_id,
+                payload={"reason": "SET_IN_PROGRESS"},
+                ticket_id=ticket_id,
+            )
             await callback.answer("Нет доступа", show_alert=True)
             await session.commit()
             return
@@ -165,11 +220,13 @@ async def status_in_progress(callback: CallbackQuery, bot: Bot) -> None:
             ticket = await ticket_service.set_in_progress(session, ticket_id, user.id)
 
         if not ticket:
-            await callback.answer("Нельзя сменить статус", show_alert=True)
+            await callback.answer("Нельзя сменить статус: заказ должен быть принят.", show_alert=True)
             return
 
+        requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
+
     await callback.message.edit_text(format_ticket_card(ticket))
-    await bot.send_message(settings.requests_chat_id, format_ticket_card(ticket))
+    await bot.send_message(requests_chat_id, format_ticket_card(ticket))
     await callback.answer("Статус обновлен")
 
 
@@ -183,6 +240,16 @@ async def close_start(callback: CallbackQuery, state: FSMContext) -> None:
         )
         await session.commit()
         if not user.is_active or user.role not in MASTER_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="ticket",
+                entity_id=ticket_id,
+                payload={"reason": "CLOSE_TICKET"},
+                ticket_id=ticket_id,
+            )
+            await session.commit()
             await callback.answer("Нет доступа", show_alert=True)
             return
 
@@ -194,10 +261,30 @@ async def close_start(callback: CallbackQuery, state: FSMContext) -> None:
             await callback.answer("Нет исполнителя для закрытия", show_alert=True)
             return
         if user.role not in {UserRole.SYS_ADMIN, UserRole.SUPER_ADMIN} and ticket.assigned_executor_id != user.id:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="ticket",
+                entity_id=ticket_id,
+                payload={"reason": "CLOSE_TICKET_NOT_EXECUTOR"},
+                ticket_id=ticket_id,
+            )
+            await session.commit()
             await callback.answer("Нет прав на закрытие", show_alert=True)
             return
-        if ticket.status not in {TicketStatus.TAKEN, TicketStatus.IN_PROGRESS, TicketStatus.WAITING}:
-            await callback.answer("Нельзя закрыть в текущем статусе", show_alert=True)
+        if ticket.status != TicketStatus.IN_PROGRESS:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="INVALID_STATE_TRANSITION",
+                entity_type="ticket",
+                entity_id=ticket_id,
+                payload={"before": {"status": ticket.status.value}, "after": {"status": TicketStatus.CLOSED.value}},
+                ticket_id=ticket_id,
+            )
+            await session.commit()
+            await callback.answer("Нельзя закрыть заказ не из статуса 'В работе'.", show_alert=True)
             return
 
     await state.clear()
@@ -300,7 +387,8 @@ async def close_select_junior(callback: CallbackQuery, state: FSMContext) -> Non
     await state.set_state(TicketCloseStates.confirm)
     await callback.message.answer(
         f"Доход: {revenue}\nРасход: {expense}\nЧистая прибыль: {net_profit}\n"
-        f"Младший мастер: {junior_label}",
+        f"Младший мастер: {junior_label}\n\n"
+        "Вы уверены? Это действие нельзя отменить.",
         reply_markup=close_confirm_keyboard(),
     )
     await callback.answer()
@@ -318,12 +406,22 @@ async def close_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
         await callback.answer("Сессия закрытия устарела", show_alert=True)
         await state.clear()
         return
+    requests_chat_id = settings.requests_chat_id
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
             session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
         )
         if not user.is_active or user.role not in MASTER_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="ticket",
+                entity_id=ticket_id,
+                payload={"reason": "CLOSE_TICKET"},
+                ticket_id=ticket_id,
+            )
             await callback.answer("Нет доступа", show_alert=True)
             await session.commit()
             await state.clear()
@@ -342,27 +440,39 @@ async def close_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
             )
 
         if not ticket:
-            await callback.answer("Не удалось закрыть заказ", show_alert=True)
+            await callback.answer("Нельзя закрыть заказ в текущем статусе.", show_alert=True)
             await state.clear()
             return
+
+        requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
 
     await state.clear()
     await callback.message.answer("Заказ закрыт.")
     await callback.message.answer(format_ticket_card(ticket), reply_markup=await build_main_menu(user.role))
-    await bot.send_message(settings.requests_chat_id, format_ticket_card(ticket))
-    await bot.send_message(settings.requests_chat_id, format_order_report(ticket))
+    await bot.send_message(requests_chat_id, format_ticket_card(ticket))
+    await bot.send_message(requests_chat_id, format_order_report(ticket))
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("transfer_sent:"))
 async def transfer_sent(callback: CallbackQuery, bot: Bot) -> None:
     ticket_id = int(callback.data.split(":", 1)[1])
+    requests_chat_id = settings.requests_chat_id
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
             session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
         )
         if not user.is_active or user.role not in MASTER_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="ticket",
+                entity_id=ticket_id,
+                payload={"reason": "TRANSFER_SENT"},
+                ticket_id=ticket_id,
+            )
             await callback.answer("Нет доступа", show_alert=True)
             await session.commit()
             return
@@ -371,11 +481,13 @@ async def transfer_sent(callback: CallbackQuery, bot: Bot) -> None:
             ticket = await ticket_service.mark_transfer_sent(session, ticket_id, user.id)
 
         if not ticket:
-            await callback.answer("Нельзя отметить перевод", show_alert=True)
+            await callback.answer("Нельзя отметить перевод: заказ не закрыт или перевод уже отмечен.", show_alert=True)
             return
 
+        requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
+
     await callback.message.edit_text(format_ticket_card(ticket))
-    await bot.send_message(settings.requests_chat_id, format_ticket_card(ticket))
+    await bot.send_message(requests_chat_id, format_ticket_card(ticket))
     await callback.answer("Отметили перевод")
 
 
@@ -387,6 +499,15 @@ async def transfer_confirmations(message: Message) -> None:
         )
         await session.commit()
         if not user.is_active or user.role not in TRANSFER_CONFIRM_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="ticket",
+                entity_id=None,
+                payload={"reason": "TRANSFER_CONFIRM_LIST"},
+            )
+            await session.commit()
             await message.answer("У вас нет доступа к подтверждениям.")
             return
 
@@ -411,14 +532,34 @@ async def transfer_confirmations(message: Message) -> None:
 
 
 @router.callback_query(F.data.startswith("transfer_confirm:"))
+async def transfer_confirm_prompt(callback: CallbackQuery) -> None:
+    ticket_id = int(callback.data.split(":", 1)[1])
+    await callback.message.answer(
+        "Вы уверены? Это действие нельзя отменить.",
+        reply_markup=transfer_confirm_keyboard(ticket_id),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("transfer_confirm_yes:"))
 async def transfer_confirm(callback: CallbackQuery, bot: Bot) -> None:
     ticket_id = int(callback.data.split(":", 1)[1])
+    requests_chat_id = settings.requests_chat_id
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
             session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
         )
         if not user.is_active or user.role not in TRANSFER_CONFIRM_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="ticket",
+                entity_id=ticket_id,
+                payload={"reason": "TRANSFER_CONFIRM"},
+                ticket_id=ticket_id,
+            )
             await callback.answer("Нет доступа", show_alert=True)
             await session.commit()
             return
@@ -430,20 +571,37 @@ async def transfer_confirm(callback: CallbackQuery, bot: Bot) -> None:
             await callback.answer("Нельзя подтвердить перевод", show_alert=True)
             return
 
+        requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
+
     await callback.message.edit_text(format_ticket_card(ticket))
-    await bot.send_message(settings.requests_chat_id, format_ticket_card(ticket))
+    await bot.send_message(requests_chat_id, format_ticket_card(ticket))
     await callback.answer("Перевод подтвержден")
+
+
+@router.callback_query(F.data.startswith("transfer_confirm_no:"))
+async def transfer_confirm_cancel(callback: CallbackQuery) -> None:
+    await callback.answer("Подтверждение отменено")
 
 
 @router.callback_query(F.data.startswith("transfer_reject:"))
 async def transfer_reject(callback: CallbackQuery, bot: Bot) -> None:
     ticket_id = int(callback.data.split(":", 1)[1])
+    requests_chat_id = settings.requests_chat_id
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
             session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
         )
         if not user.is_active or user.role not in TRANSFER_CONFIRM_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="ticket",
+                entity_id=ticket_id,
+                payload={"reason": "TRANSFER_REJECT"},
+                ticket_id=ticket_id,
+            )
             await callback.answer("Нет доступа", show_alert=True)
             await session.commit()
             return
@@ -455,6 +613,8 @@ async def transfer_reject(callback: CallbackQuery, bot: Bot) -> None:
             await callback.answer("Нельзя отклонить перевод", show_alert=True)
             return
 
+        requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
+
     await callback.message.edit_text(format_ticket_card(ticket))
-    await bot.send_message(settings.requests_chat_id, format_ticket_card(ticket))
+    await bot.send_message(requests_chat_id, format_ticket_card(ticket))
     await callback.answer("Перевод отклонен")

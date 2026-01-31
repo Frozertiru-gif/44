@@ -25,7 +25,12 @@ class JuniorLinkService:
         percent: Decimal,
         actor_id: int,
     ) -> MasterJuniorLink:
-        await self._validate_actor_role(session, actor_id, allowed_roles={UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN})
+        await self._validate_actor_role(
+            session,
+            actor_id,
+            allowed_roles={UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN},
+            action="JUNIOR_LINK_CREATE",
+        )
         await self._validate_master_role(session, master_id)
         await self._validate_junior_role(session, junior_id)
         percent = self._validate_percent(percent)
@@ -46,7 +51,10 @@ class JuniorLinkService:
             action="JUNIOR_LINK_CREATED",
             entity_type="master_junior_link",
             entity_id=link.id,
-            payload={"master_id": master_id, "junior_master_id": junior_id, "percent": float(percent)},
+            payload={
+                "before": None,
+                "after": {"master_id": master_id, "junior_master_id": junior_id, "percent": float(percent)},
+            },
         )
         return link
 
@@ -59,7 +67,12 @@ class JuniorLinkService:
         percent: Decimal,
         actor_id: int,
     ) -> MasterJuniorLink:
-        await self._validate_actor_role(session, actor_id, allowed_roles={UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN})
+        await self._validate_actor_role(
+            session,
+            actor_id,
+            allowed_roles={UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN},
+            action="JUNIOR_LINK_RELINK",
+        )
         await self._validate_master_role(session, new_master_id)
         await self._validate_junior_role(session, junior_id)
         percent = self._validate_percent(percent)
@@ -75,7 +88,12 @@ class JuniorLinkService:
                 action="JUNIOR_LINK_DISABLED",
                 entity_type="master_junior_link",
                 entity_id=current_link.id,
-                payload={"master_id": current_link.master_id, "junior_master_id": junior_id},
+                payload={
+                    "before": {"is_active": True},
+                    "after": {"is_active": False},
+                    "master_id": current_link.master_id,
+                    "junior_master_id": junior_id,
+                },
             )
 
         link = MasterJuniorLink(
@@ -93,7 +111,10 @@ class JuniorLinkService:
             action="JUNIOR_LINK_CHANGED",
             entity_type="master_junior_link",
             entity_id=link.id,
-            payload={"master_id": new_master_id, "junior_master_id": junior_id, "percent": float(percent)},
+            payload={
+                "before": None,
+                "after": {"master_id": new_master_id, "junior_master_id": junior_id, "percent": float(percent)},
+            },
         )
         return link
 
@@ -117,13 +138,17 @@ class JuniorLinkService:
         active_count = await self._count_active_links(session, link.master_id)
         if active_count <= 1:
             if actor.role not in {UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN}:
+                await self._log_permission_denied(session, actor_id=actor_id, action="JUNIOR_PERCENT_CHANGE")
                 raise ValueError("Нет прав на изменение процента")
         else:
             if actor.role not in {UserRole.MASTER, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN}:
+                await self._log_permission_denied(session, actor_id=actor_id, action="JUNIOR_PERCENT_CHANGE")
                 raise ValueError("Нет прав на изменение процента")
         if actor.role == UserRole.MASTER and link.master_id != actor.id:
+            await self._log_permission_denied(session, actor_id=actor_id, action="JUNIOR_PERCENT_CHANGE")
             raise ValueError("Нет прав на изменение процента")
 
+        before_percent = link.percent
         link.percent = percent
         link.updated_at = datetime.utcnow()
         await session.flush()
@@ -133,12 +158,22 @@ class JuniorLinkService:
             action="JUNIOR_PERCENT_CHANGED",
             entity_type="master_junior_link",
             entity_id=link.id,
-            payload={"master_id": link.master_id, "junior_master_id": link.junior_master_id, "percent": float(percent)},
+            payload={
+                "before": {"percent": float(before_percent)},
+                "after": {"percent": float(percent)},
+                "master_id": link.master_id,
+                "junior_master_id": link.junior_master_id,
+            },
         )
         return link
 
     async def disable_link(self, session: AsyncSession, *, link_id: int, actor_id: int) -> MasterJuniorLink:
-        await self._validate_actor_role(session, actor_id, allowed_roles={UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN})
+        await self._validate_actor_role(
+            session,
+            actor_id,
+            allowed_roles={UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN},
+            action="JUNIOR_LINK_DISABLE",
+        )
         link = await session.get(MasterJuniorLink, link_id)
         if not link or not link.is_active:
             raise ValueError("Привязка не найдена")
@@ -151,7 +186,12 @@ class JuniorLinkService:
             action="JUNIOR_LINK_DISABLED",
             entity_type="master_junior_link",
             entity_id=link.id,
-            payload={"master_id": link.master_id, "junior_master_id": link.junior_master_id},
+            payload={
+                "before": {"is_active": True},
+                "after": {"is_active": False},
+                "master_id": link.master_id,
+                "junior_master_id": link.junior_master_id,
+            },
         )
         return link
 
@@ -209,10 +249,28 @@ class JuniorLinkService:
         if not junior or junior.role != UserRole.JUNIOR_MASTER:
             raise ValueError("Младший мастер не найден")
 
-    async def _validate_actor_role(self, session: AsyncSession, actor_id: int, *, allowed_roles: set[UserRole]) -> None:
+    async def _validate_actor_role(
+        self,
+        session: AsyncSession,
+        actor_id: int,
+        *,
+        allowed_roles: set[UserRole],
+        action: str,
+    ) -> None:
         actor = await session.get(User, actor_id)
         if not actor or actor.role not in allowed_roles:
+            await self._log_permission_denied(session, actor_id=actor_id, action=action)
             raise ValueError("Нет прав")
+
+    async def _log_permission_denied(self, session: AsyncSession, *, actor_id: int, action: str) -> None:
+        await self._audit.log_audit_event(
+            session,
+            actor_id=actor_id,
+            action="PERMISSION_DENIED",
+            entity_type="master_junior_link",
+            entity_id=None,
+            payload={"reason": action},
+        )
 
     async def _ensure_no_active_link(self, session: AsyncSession, junior_id: int) -> None:
         existing = await self.get_active_link_for_junior(session, junior_id)

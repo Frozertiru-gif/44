@@ -8,4 +8,6 @@ class FinanceStates(StatesGroup):
     transaction_category = State()
     transaction_comment = State()
     transaction_date = State()
+    transaction_confirm = State()
     share_percent = State()
+    share_confirm = State()

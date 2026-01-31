@@ -33,6 +33,7 @@ from app.core.config import get_settings
 from app.db.enums import AdSource
 from app.db.session import async_session_factory
 from app.services.audit_service import AuditService
+from app.services.project_settings_service import ProjectSettingsService
 from app.services.ticket_service import TicketService
 from app.services.user_service import UserService
 
@@ -41,6 +42,7 @@ settings = get_settings()
 user_service = UserService()
 ticket_service = TicketService()
 audit_service = AuditService()
+project_settings_service = ProjectSettingsService()
 
 
 @router.message(F.text == "➕ Создать заказ")
@@ -231,6 +233,15 @@ async def ticket_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) -
             session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
         )
         if not user.is_active or user.role not in CREATE_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="ticket",
+                entity_id=None,
+                payload={"reason": "CREATE_TICKET"},
+            )
+            await session.commit()
             await callback.answer("Нет прав", show_alert=True)
             return
 
@@ -248,12 +259,31 @@ async def ticket_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) -
             is_repeat=data.get("is_repeat", False),
             repeat_ticket_ids=data.get("repeat_ticket_ids"),
         )
-        await audit_service.log_event(session, ticket_id=ticket.id, action="TICKET_CREATED", actor_id=user.id)
+        if not ticket:
+            await callback.answer("Не удалось создать заказ", show_alert=True)
+            await session.commit()
+            return
+        await audit_service.log_event(
+            session,
+            ticket_id=ticket.id,
+            action="TICKET_CREATED",
+            actor_id=user.id,
+            payload={
+                "before": None,
+                "after": {
+                    "status": ticket.status.value,
+                    "category": ticket.category.value,
+                    "client_phone": ticket.client_phone,
+                },
+            },
+        )
         await session.commit()
 
     bot_info = await bot.get_me()
+    async with async_session_factory() as session:
+        requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
     await bot.send_message(
-        settings.requests_chat_id,
+        requests_chat_id,
         format_ticket_card(ticket),
         reply_markup=request_chat_keyboard(ticket.id, bot_info.username),
     )

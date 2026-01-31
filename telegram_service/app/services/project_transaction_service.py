@@ -5,8 +5,8 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.enums import ProjectTransactionType
-from app.db.models import ProjectTransaction
+from app.db.enums import ProjectTransactionType, UserRole
+from app.db.models import ProjectTransaction, User
 from app.services.audit_service import AuditService
 
 
@@ -25,6 +25,17 @@ class ProjectTransactionService:
         occurred_at: datetime,
         created_by: int,
     ) -> ProjectTransaction:
+        actor = await session.get(User, created_by)
+        if not actor or actor.role not in {UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN}:
+            await self._audit.log_audit_event(
+                session,
+                actor_id=created_by,
+                action="PERMISSION_DENIED",
+                entity_type="project_transaction",
+                entity_id=None,
+                payload={"reason": "PROJECT_TX_ADD"},
+            )
+            raise ValueError("Нет прав на добавление операций")
         transaction = ProjectTransaction(
             type=transaction_type,
             amount=amount,
@@ -42,6 +53,8 @@ class ProjectTransactionService:
             entity_type="project_transaction",
             entity_id=transaction.id,
             payload={
+                "before": None,
+                "after": {"amount": float(amount)},
                 "type": transaction_type.value,
                 "amount": float(amount),
                 "category": category,

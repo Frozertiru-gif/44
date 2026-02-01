@@ -27,19 +27,40 @@ user_role = postgresql.ENUM(
     create_type=False,
 )
 
-ticket_status = sa.Enum("READY_FOR_WORK", "CANCELLED", name="ticket_status")
+ticket_status = postgresql.ENUM(
+    "READY_FOR_WORK",
+    "CANCELLED",
+    name="ticket_status",
+    create_type=False,
+)
 
-ticket_category = sa.Enum("ПК", "ТВ", "Телефон", "Принтер", "Другое", name="ticket_category")
+ticket_category = postgresql.ENUM(
+    "ПК",
+    "ТВ",
+    "Телефон",
+    "Принтер",
+    "Другое",
+    name="ticket_category",
+    create_type=False,
+)
 
-ad_source = sa.Enum("Авито", "Листовка", "Визитка", "Другое", "Неизвестно", name="ad_source")
+ad_source = postgresql.ENUM(
+    "Авито",
+    "Листовка",
+    "Визитка",
+    "Другое",
+    "Неизвестно",
+    name="ad_source",
+    create_type=False,
+)
 
 
 def upgrade() -> None:
     bind = op.get_bind()
     user_role.create(bind, checkfirst=True)
-    ticket_status.create(op.get_bind(), checkfirst=True)
-    ticket_category.create(op.get_bind(), checkfirst=True)
-    ad_source.create(op.get_bind(), checkfirst=True)
+    ticket_status.create(bind, checkfirst=True)
+    ticket_category.create(bind, checkfirst=True)
+    ad_source.create(bind, checkfirst=True)
 
     op.create_table(
         "users",
@@ -101,7 +122,7 @@ def downgrade() -> None:
     op.drop_table("tickets")
     op.drop_table("users")
 
-    ad_source.drop(op.get_bind(), checkfirst=True)
-    ticket_category.drop(op.get_bind(), checkfirst=True)
-    ticket_status.drop(op.get_bind(), checkfirst=True)
+    ad_source.drop(bind, checkfirst=True)
+    ticket_category.drop(bind, checkfirst=True)
+    ticket_status.drop(bind, checkfirst=True)
     user_role.drop(bind, checkfirst=True)

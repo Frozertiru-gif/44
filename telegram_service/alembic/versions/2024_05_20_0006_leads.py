@@ -16,27 +16,30 @@ branch_labels = None
 depends_on = None
 
 
-lead_ad_source = sa.Enum(
+lead_ad_source = postgresql.ENUM(
     "AVITO",
     "FLYER",
     "BUSINESS_CARD",
     "OTHER",
     "UNKNOWN",
     name="lead_ad_source",
+    create_type=False,
 )
 
-lead_status = sa.Enum(
+lead_status = postgresql.ENUM(
     "NEW_RAW",
     "NEED_INFO",
     "CONVERTED",
     "SPAM",
     name="lead_status",
+    create_type=False,
 )
 
 
 def upgrade() -> None:
-    lead_ad_source.create(op.get_bind(), checkfirst=True)
-    lead_status.create(op.get_bind(), checkfirst=True)
+    bind = op.get_bind()
+    lead_ad_source.create(bind, checkfirst=True)
+    lead_status.create(bind, checkfirst=True)
 
     op.alter_column(
         "audit_events",
@@ -103,5 +106,6 @@ def downgrade() -> None:
         postgresql_using="entity_id::bigint",
     )
 
-    lead_status.drop(op.get_bind(), checkfirst=True)
-    lead_ad_source.drop(op.get_bind(), checkfirst=True)
+    bind = op.get_bind()
+    lead_status.drop(bind, checkfirst=True)
+    lead_ad_source.drop(bind, checkfirst=True)

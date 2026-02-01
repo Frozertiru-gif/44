@@ -12,6 +12,7 @@ class Settings(BaseSettings):
 
     bot_token: str
     database_url: str
+    db_schema: str = Field(default="public", validation_alias=AliasChoices("DB_SCHEMA", "db_schema"))
     requests_chat_id: int
     super_admin: int | None = Field(default=None, validation_alias=AliasChoices("SUPER_ADMIN", "super_admin"))
     sys_admin_ids: str = ""

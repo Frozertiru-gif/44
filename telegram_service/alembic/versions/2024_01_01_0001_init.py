@@ -23,6 +23,7 @@ user_role = sa.Enum(
     "MASTER",
     "JUNIOR_MASTER",
     name="user_role",
+    create_type=False,
 )
 
 ticket_status = sa.Enum("READY_FOR_WORK", "CANCELLED", name="ticket_status")
@@ -33,7 +34,23 @@ ad_source = sa.Enum("Авито", "Листовка", "Визитка", "Дру�
 
 
 def upgrade() -> None:
-    user_role.create(op.get_bind(), checkfirst=True)
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
+                CREATE TYPE user_role AS ENUM (
+                    'SYS_ADMIN',
+                    'SUPER_ADMIN',
+                    'ADMIN',
+                    'JUNIOR_ADMIN',
+                    'MASTER',
+                    'JUNIOR_MASTER'
+                );
+            END IF;
+        END $$;
+        """
+    )
     ticket_status.create(op.get_bind(), checkfirst=True)
     ticket_category.create(op.get_bind(), checkfirst=True)
     ad_source.create(op.get_bind(), checkfirst=True)
@@ -100,4 +117,4 @@ def downgrade() -> None:
     ad_source.drop(op.get_bind(), checkfirst=True)
     ticket_category.drop(op.get_bind(), checkfirst=True)
     ticket_status.drop(op.get_bind(), checkfirst=True)
-    user_role.drop(op.get_bind(), checkfirst=True)
+    op.execute("DROP TYPE IF EXISTS user_role")

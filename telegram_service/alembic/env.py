@@ -7,7 +7,6 @@ from pathlib import Path
 
 from alembic import context
 from sqlalchemy import pool
-from sqlalchemy.ext.asyncio import async_engine_from_config
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -15,6 +14,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from app.core.config import get_settings
 from app.db.base import Base
+from app.db.engine import create_engine
 from app.db import models  # noqa: F401
 
 config = context.config
@@ -42,9 +42,9 @@ def run_migrations_offline() -> None:
 
 
 async def run_migrations_online() -> None:
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section),
-        prefix="sqlalchemy.",
+    connectable = create_engine(
+        settings.database_url,
+        schema=settings.db_schema,
         poolclass=pool.NullPool,
     )
 

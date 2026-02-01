@@ -7,6 +7,7 @@ Create Date: 2024-01-01 00:00:00.000000
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "2024_01_01_0001"
@@ -15,7 +16,7 @@ branch_labels = None
 depends_on = None
 
 
-user_role = sa.Enum(
+user_role = postgresql.ENUM(
     "SYS_ADMIN",
     "SUPER_ADMIN",
     "ADMIN",
@@ -34,23 +35,8 @@ ad_source = sa.Enum("Авито", "Листовка", "Визитка", "Дру�
 
 
 def upgrade() -> None:
-    op.execute(
-        """
-        DO $$
-        BEGIN
-            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'user_role') THEN
-                CREATE TYPE user_role AS ENUM (
-                    'SYS_ADMIN',
-                    'SUPER_ADMIN',
-                    'ADMIN',
-                    'JUNIOR_ADMIN',
-                    'MASTER',
-                    'JUNIOR_MASTER'
-                );
-            END IF;
-        END $$;
-        """
-    )
+    bind = op.get_bind()
+    user_role.create(bind, checkfirst=True)
     ticket_status.create(op.get_bind(), checkfirst=True)
     ticket_category.create(op.get_bind(), checkfirst=True)
     ad_source.create(op.get_bind(), checkfirst=True)
@@ -108,6 +94,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    bind = op.get_bind()
     op.drop_table("audit_events")
     op.drop_table("ticket_events")
     op.drop_index("ix_tickets_client_phone", table_name="tickets")
@@ -117,4 +104,4 @@ def downgrade() -> None:
     ad_source.drop(op.get_bind(), checkfirst=True)
     ticket_category.drop(op.get_bind(), checkfirst=True)
     ticket_status.drop(op.get_bind(), checkfirst=True)
-    op.execute("DROP TYPE IF EXISTS user_role")
+    user_role.drop(bind, checkfirst=True)

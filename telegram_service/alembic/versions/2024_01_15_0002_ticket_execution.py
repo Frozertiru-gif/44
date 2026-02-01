@@ -7,6 +7,7 @@ Create Date: 2024-01-15 00:00:00.000000
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "2024_01_15_0002"
@@ -15,7 +16,14 @@ branch_labels = None
 depends_on = None
 
 
-transfer_status = sa.Enum("NOT_SENT", "SENT", "CONFIRMED", "REJECTED", name="transfer_status")
+transfer_status = postgresql.ENUM(
+    "NOT_SENT",
+    "SENT",
+    "CONFIRMED",
+    "REJECTED",
+    name="transfer_status",
+    create_type=False,
+)
 
 
 TICKET_STATUS_VALUES = ["TAKEN", "IN_PROGRESS", "WAITING", "CLOSED"]
@@ -25,7 +33,8 @@ def upgrade() -> None:
     for value in TICKET_STATUS_VALUES:
         op.execute(f"ALTER TYPE ticket_status ADD VALUE IF NOT EXISTS '{value}'")
 
-    transfer_status.create(op.get_bind(), checkfirst=True)
+    bind = op.get_bind()
+    transfer_status.create(bind, checkfirst=True)
 
     op.add_column("tickets", sa.Column("assigned_executor_id", sa.BigInteger(), nullable=True))
     op.add_column("tickets", sa.Column("taken_at", sa.DateTime(), nullable=True))
@@ -55,4 +64,5 @@ def downgrade() -> None:
     op.drop_column("tickets", "taken_at")
     op.drop_column("tickets", "assigned_executor_id")
 
-    transfer_status.drop(op.get_bind(), checkfirst=True)
+    bind = op.get_bind()
+    transfer_status.drop(bind, checkfirst=True)

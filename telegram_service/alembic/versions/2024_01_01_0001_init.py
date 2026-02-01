@@ -24,6 +24,7 @@ user_role = postgresql.ENUM(
     "MASTER",
     "JUNIOR_MASTER",
     name="user_role",
+    schema="public",
     create_type=False,
 )
 
@@ -31,6 +32,7 @@ ticket_status = postgresql.ENUM(
     "READY_FOR_WORK",
     "CANCELLED",
     name="ticket_status",
+    schema="public",
     create_type=False,
 )
 
@@ -41,6 +43,7 @@ ticket_category = postgresql.ENUM(
     "Принтер",
     "Другое",
     name="ticket_category",
+    schema="public",
     create_type=False,
 )
 
@@ -51,16 +54,95 @@ ad_source = postgresql.ENUM(
     "Другое",
     "Неизвестно",
     name="ad_source",
+    schema="public",
     create_type=False,
 )
 
 
 def upgrade() -> None:
-    bind = op.get_bind()
-    user_role.create(bind, checkfirst=True)
-    ticket_status.create(bind, checkfirst=True)
-    ticket_category.create(bind, checkfirst=True)
-    ad_source.create(bind, checkfirst=True)
+    # Use DO blocks for idempotent enum creation to avoid DuplicateObjectError.
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_type t
+                JOIN pg_namespace n ON n.oid = t.typnamespace
+                WHERE t.typname = 'user_role' AND n.nspname = 'public'
+            ) THEN
+                CREATE TYPE public.user_role AS ENUM (
+                    'SYS_ADMIN',
+                    'SUPER_ADMIN',
+                    'ADMIN',
+                    'JUNIOR_ADMIN',
+                    'MASTER',
+                    'JUNIOR_MASTER'
+                );
+            END IF;
+        END $$;
+        """
+    )
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_type t
+                JOIN pg_namespace n ON n.oid = t.typnamespace
+                WHERE t.typname = 'ticket_status' AND n.nspname = 'public'
+            ) THEN
+                CREATE TYPE public.ticket_status AS ENUM (
+                    'READY_FOR_WORK',
+                    'CANCELLED'
+                );
+            END IF;
+        END $$;
+        """
+    )
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_type t
+                JOIN pg_namespace n ON n.oid = t.typnamespace
+                WHERE t.typname = 'ticket_category' AND n.nspname = 'public'
+            ) THEN
+                CREATE TYPE public.ticket_category AS ENUM (
+                    'ПК',
+                    'ТВ',
+                    'Телефон',
+                    'Принтер',
+                    'Другое'
+                );
+            END IF;
+        END $$;
+        """
+    )
+    op.execute(
+        """
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM pg_type t
+                JOIN pg_namespace n ON n.oid = t.typnamespace
+                WHERE t.typname = 'ad_source' AND n.nspname = 'public'
+            ) THEN
+                CREATE TYPE public.ad_source AS ENUM (
+                    'Авито',
+                    'Листовка',
+                    'Визитка',
+                    'Другое',
+                    'Неизвестно'
+                );
+            END IF;
+        END $$;
+        """
+    )
 
     op.create_table(
         "users",
@@ -115,14 +197,13 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    bind = op.get_bind()
     op.drop_table("audit_events")
     op.drop_table("ticket_events")
     op.drop_index("ix_tickets_client_phone", table_name="tickets")
     op.drop_table("tickets")
     op.drop_table("users")
 
-    ad_source.drop(bind, checkfirst=True)
-    ticket_category.drop(bind, checkfirst=True)
-    ticket_status.drop(bind, checkfirst=True)
-    user_role.drop(bind, checkfirst=True)
+    op.execute("DROP TYPE IF EXISTS public.ad_source CASCADE;")
+    op.execute("DROP TYPE IF EXISTS public.ticket_category CASCADE;")
+    op.execute("DROP TYPE IF EXISTS public.ticket_status CASCADE;")
+    op.execute("DROP TYPE IF EXISTS public.user_role CASCADE;")

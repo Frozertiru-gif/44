@@ -7,6 +7,7 @@ Create Date: 2024-03-15 00:00:00.000000
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "2024_03_15_0004"
@@ -15,11 +16,17 @@ branch_labels = None
 depends_on = None
 
 
-project_transaction_type = sa.Enum("INCOME", "EXPENSE", name="project_transaction_type")
+project_transaction_type_enum = postgresql.ENUM(
+    "INCOME",
+    "EXPENSE",
+    name="project_transaction_type",
+    create_type=False,
+)
 
 
 def upgrade() -> None:
-    project_transaction_type.create(op.get_bind(), checkfirst=True)
+    bind = op.get_bind()
+    project_transaction_type_enum.create(bind, checkfirst=True)
 
     op.add_column("users", sa.Column("master_percent", sa.Numeric(5, 2), nullable=True))
     op.add_column("users", sa.Column("admin_percent", sa.Numeric(5, 2), nullable=True))
@@ -33,7 +40,7 @@ def upgrade() -> None:
     op.create_table(
         "project_transactions",
         sa.Column("id", sa.BigInteger(), primary_key=True, autoincrement=True),
-        sa.Column("type", project_transaction_type, nullable=False),
+        sa.Column("type", project_transaction_type_enum, nullable=False),
         sa.Column("amount", sa.Numeric(12, 2), nullable=False),
         sa.Column("category", sa.Text(), nullable=False),
         sa.Column("comment", sa.Text(), nullable=True),
@@ -75,4 +82,5 @@ def downgrade() -> None:
     op.drop_column("users", "admin_percent")
     op.drop_column("users", "master_percent")
 
-    project_transaction_type.drop(op.get_bind(), checkfirst=True)
+    bind = op.get_bind()
+    project_transaction_type_enum.drop(bind, checkfirst=True)

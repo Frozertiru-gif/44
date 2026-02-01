@@ -4,14 +4,14 @@
 
 ## Требования
 
-- Python 3.11+
-- Postgres (рекомендуется)
+- Docker
+- Docker Compose
 
 ## Настройка окружения
 
 1. Скопируйте `.env.example` в `.env` и заполните значения.
-2. По умолчанию `DATABASE_URL` в `.env.example` совпадает с кредами из `docker-compose.yml` (`telegram/telegram`).
-   Если используете другую БД, обновите `DATABASE_URL`.
+2. В docker-режиме `DATABASE_URL` должен указывать на сервис `db` внутри Compose:
+   `postgresql+asyncpg://telegram:telegram@db:5432/telegram_service`.
 3. Укажите `SUPER_ADMIN` (один tg_id) и/или `SYS_ADMIN_IDS` через запятую (tg_id администраторов), чтобы они получили роли
    SUPER_ADMIN/SYS_ADMIN после первого `/start`.
 
@@ -22,47 +22,41 @@
 - `REQUESTS_CHAT_ID`
 - `SUPER_ADMIN` или `SYS_ADMIN_IDS` (минимум одно значение)
 
-## Установка зависимостей
+## Быстрый старт (Docker)
 
 ```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+cd telegram_service
+docker compose up -d --build
 ```
 
-## Быстрый старт
+## Логи бота
 
 ```bash
-docker compose up -d db
-alembic upgrade head
-python -m app.main
+docker compose logs -f bot
 ```
 
-## Быстрый старт (Windows)
+## Миграции вручную
 
 ```bash
-docker compose up -d db
-alembic upgrade head
-python -m app.main
+docker compose run --rm migrations
 ```
 
-## Запуск БД (Docker)
+## Остановка
 
 ```bash
-docker compose up -d db
+docker compose down
 ```
 
-## Миграции
+## Полный ресет БД (локально)
 
 ```bash
-alembic upgrade head
+docker compose down -v
 ```
 
-## Запуск
+## Важно про запуск polling
 
-```bash
-python -m app.main
-```
+- Запускайте бота только через Docker Compose.
+- Не запускайте параллельно `python -m app.main` на хосте вместе с контейнером, иначе возможен TelegramConflictError.
 
 ## Основные команды бота
 

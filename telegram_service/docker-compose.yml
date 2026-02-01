@@ -1,4 +1,5 @@
 version: "3.9"
+
 services:
   db:
     image: postgres:15
@@ -6,10 +7,36 @@ services:
       POSTGRES_DB: telegram_service
       POSTGRES_USER: telegram
       POSTGRES_PASSWORD: telegram
-    ports:
-      - "5432:5432"
     volumes:
       - telegram_service_db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U telegram -d telegram_service"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  migrations:
+    build:
+      context: .
+    env_file:
+      - .env
+    depends_on:
+      db:
+        condition: service_healthy
+    working_dir: /app
+    command: ["alembic", "-c", "alembic.ini", "upgrade", "head"]
+
+  bot:
+    build:
+      context: .
+    env_file:
+      - .env
+    depends_on:
+      migrations:
+        condition: service_completed_successfully
+    working_dir: /app
+    command: ["python", "-m", "app.main"]
+    restart: unless-stopped
 
 volumes:
   telegram_service_db:

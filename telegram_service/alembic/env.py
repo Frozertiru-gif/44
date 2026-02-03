@@ -55,7 +55,8 @@ async def run_migrations_online() -> None:
     async with connectable.connect() as connection:
         async with connection.begin():
             await connection.run_sync(ensure_schema)
-            await connection.run_sync(do_run_migrations)
+
+        await connection.run_sync(do_run_migrations)
 
         await connection.run_sync(verify_post_commit)
 

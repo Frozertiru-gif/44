@@ -9,6 +9,11 @@ from app.db.models import AuditEvent, TicketEvent
 
 
 class AuditService:
+    def _normalize_entity_id(self, entity_id: str | int | None) -> str | None:
+        if entity_id is None:
+            return None
+        return str(entity_id)
+
     def _enrich_payload(
         self,
         *,
@@ -22,7 +27,7 @@ class AuditService:
         if ticket_id is not None:
             enriched.setdefault("ticket_id", ticket_id)
         if entity_id is not None:
-            enriched.setdefault("entity_id", entity_id)
+            enriched["entity_id"] = self._normalize_entity_id(entity_id)
         enriched.setdefault("timestamp", datetime.utcnow().isoformat())
         return enriched
 
@@ -56,17 +61,18 @@ class AuditService:
         payload: dict[str, Any] | None = None,
         ticket_id: int | None = None,
     ) -> AuditEvent:
+        normalized_entity_id = self._normalize_entity_id(entity_id)
         payload = self._enrich_payload(
             payload=payload,
             actor_id=actor_id,
             ticket_id=ticket_id,
-            entity_id=entity_id,
+            entity_id=normalized_entity_id,
         )
         event = AuditEvent(
             actor_id=actor_id,
             action=action,
             entity_type=entity_type,
-            entity_id=entity_id,
+            entity_id=normalized_entity_id,
             payload=payload,
         )
         session.add(event)

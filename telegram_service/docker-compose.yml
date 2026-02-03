@@ -15,7 +15,7 @@ services:
       timeout: 5s
       retries: 5
 
-  migrations:
+  bot:
     build:
       context: .
     env_file:
@@ -24,19 +24,7 @@ services:
       db:
         condition: service_healthy
     working_dir: /app
-    command: ["alembic", "-c", "alembic.ini", "upgrade", "head"]
-    restart: "no"
-
-  bot:
-    build:
-      context: .
-    env_file:
-      - .env
-    depends_on:
-      migrations:
-        condition: service_completed_successfully
-    working_dir: /app
-    command: ["python", "-m", "app.main"]
+    entrypoint: ["/app/scripts/entrypoint.sh"]
     restart: unless-stopped
 
 volumes:

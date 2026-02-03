@@ -7,6 +7,7 @@ from pathlib import Path
 
 from alembic import context
 from sqlalchemy import pool
+from sqlalchemy import text
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -35,6 +36,8 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         compare_type=True,
+        transaction_per_migration=True,
+        version_table_schema=settings.db_schema,
         dialect_opts={"paramstyle": "named"},
     )
 
@@ -50,11 +53,17 @@ async def run_migrations_online() -> None:
     )
 
     async with connectable.connect() as connection:
+        schema_name = settings.db_schema or "public"
+        safe_schema = schema_name.replace('"', '""')
+        await connection.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{safe_schema}"'))
+        await connection.execute(text(f'SET search_path TO "{safe_schema}", public'))
         await connection.run_sync(
             lambda sync_conn: context.configure(
                 connection=sync_conn,
                 target_metadata=target_metadata,
                 compare_type=True,
+                transaction_per_migration=True,
+                version_table_schema=settings.db_schema,
             )
         )
         await connection.run_sync(lambda sync_conn: context.run_migrations())

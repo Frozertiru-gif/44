@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
-from sqlalchemy import and_, or_, select, update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -599,13 +599,7 @@ class TicketService:
 
     def _build_access_filter(self, actor: User) -> bool | Any:
         if actor.role in {UserRole.MASTER, UserRole.JUNIOR_MASTER}:
-            return or_(
-                and_(
-                    Ticket.status == TicketStatus.READY_FOR_WORK,
-                    Ticket.assigned_executor_id.is_(None),
-                ),
-                Ticket.assigned_executor_id == actor.id,
-            )
+            return Ticket.assigned_executor_id == actor.id
         if actor.role in {
             UserRole.ADMIN,
             UserRole.JUNIOR_ADMIN,
@@ -624,9 +618,7 @@ class TicketService:
         }:
             return True
         if actor.role in {UserRole.MASTER, UserRole.JUNIOR_MASTER}:
-            return ticket.assigned_executor_id == actor.id or (
-                ticket.status == TicketStatus.READY_FOR_WORK and ticket.assigned_executor_id is None
-            )
+            return ticket.assigned_executor_id == actor.id
         return False
 
     async def _log_invalid_transition(

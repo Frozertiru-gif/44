@@ -11,6 +11,7 @@ from app.bot.handlers.permissions import CREATE_ROLES
 from app.bot.handlers.utils import (
     format_lead_card,
     format_ticket_card,
+    format_ticket_public,
     format_ticket_preview,
     is_valid_phone,
     normalize_phone,
@@ -357,7 +358,7 @@ async def ticket_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) -
         requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
     await bot.send_message(
         requests_chat_id,
-        format_ticket_card(ticket),
+        format_ticket_public(ticket),
         reply_markup=request_chat_keyboard(ticket, bot_info.username),
     )
 

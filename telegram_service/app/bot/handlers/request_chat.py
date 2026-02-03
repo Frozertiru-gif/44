@@ -8,10 +8,16 @@ from aiogram.fsm.storage.base import StorageKey
 from aiogram.types import CallbackQuery
 
 from app.bot.handlers.permissions import CANCEL_ROLES, MASTER_ROLES, CREATE_ROLES
-from app.bot.handlers.utils import format_lead_card, format_ticket_card
-from app.bot.keyboards.request_chat import lead_request_keyboard, request_chat_keyboard
+from app.bot.handlers.utils import (
+    format_lead_card,
+    format_ticket_card,
+    format_ticket_event_cancelled,
+    format_ticket_event_taken,
+)
+from app.bot.keyboards.request_chat import lead_request_keyboard
 from app.bot.keyboards.ticket_wizard import category_keyboard
 from app.bot.states.ticket_create import TicketCreateStates
+from app.core.config import get_settings
 from app.db.enums import LeadStatus
 from app.db.session import async_session_factory
 from app.services.audit_service import AuditService
@@ -24,10 +30,11 @@ user_service = UserService()
 ticket_service = TicketService()
 audit_service = AuditService()
 lead_service = LeadService()
+settings = get_settings()
 
 
 @router.callback_query(F.data.startswith("cancel:"))
-async def cancel_from_request_chat(callback: CallbackQuery) -> None:
+async def cancel_from_request_chat(callback: CallbackQuery, bot: Bot) -> None:
     ticket_id = int(callback.data.split(":", 1)[1])
 
     async with async_session_factory() as session:
@@ -70,7 +77,7 @@ async def cancel_from_request_chat(callback: CallbackQuery) -> None:
         )
         await session.commit()
 
-    await callback.message.edit_text(format_ticket_card(ticket))
+    await bot.send_message(settings.events_chat_id, format_ticket_event_cancelled(ticket))
     await callback.answer("Заказ отменен")
 
 
@@ -107,12 +114,12 @@ async def request_take(callback: CallbackQuery, bot: Bot) -> None:
             return
         await session.commit()
 
-        bot_info = await bot.get_me()
-
-    await callback.message.edit_text(
-        format_ticket_card(ticket),
-        reply_markup=request_chat_keyboard(ticket, bot_info.username),
-    )
+    await bot.send_message(settings.events_chat_id, format_ticket_event_taken(ticket))
+    if ticket.assigned_executor_id == user.id:
+        await bot.send_message(
+            user.id,
+            f"Вы приняли заявку #{ticket.id}.\n\n{format_ticket_card(ticket)}",
+        )
     await callback.answer("Заказ принят")
 
 

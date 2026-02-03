@@ -9,8 +9,11 @@ from aiogram.types import CallbackQuery, Message
 from app.bot.handlers.permissions import MASTER_ROLES, TRANSFER_CONFIRM_ROLES
 from app.bot.handlers.utils import (
     format_active_ticket_card,
-    format_order_report,
     format_ticket_card,
+    format_ticket_event_closed,
+    format_ticket_event_status,
+    format_ticket_event_taken,
+    format_ticket_event_transfer,
     format_ticket_queue_card,
 )
 from app.bot.keyboards.main_menu import build_main_menu
@@ -28,7 +31,6 @@ from app.core.config import get_settings
 from app.db.enums import TicketStatus, TransferStatus, UserRole
 from app.db.session import async_session_factory
 from app.services.audit_service import AuditService
-from app.services.project_settings_service import ProjectSettingsService
 from app.services.ticket_service import TicketService
 from app.services.junior_link_service import JuniorLinkService
 from app.services.user_service import UserService
@@ -39,7 +41,6 @@ user_service = UserService()
 ticket_service = TicketService()
 junior_link_service = JuniorLinkService()
 audit_service = AuditService()
-project_settings_service = ProjectSettingsService()
 
 
 def parse_amount(value: str) -> Decimal | None:
@@ -89,7 +90,7 @@ async def queue_list(message: Message) -> None:
 @router.callback_query(F.data.startswith("queue_take:"))
 async def queue_take(callback: CallbackQuery, bot: Bot) -> None:
     ticket_id = int(callback.data.split(":", 1)[1])
-    requests_chat_id = settings.requests_chat_id
+    events_chat_id = settings.events_chat_id
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
@@ -119,11 +120,10 @@ async def queue_take(callback: CallbackQuery, bot: Bot) -> None:
             await callback.answer("Заказ уже принят или недоступен.", show_alert=True)
             return
 
-        requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
         await session.commit()
 
     await callback.message.edit_text(format_ticket_card(ticket))
-    await bot.send_message(requests_chat_id, format_ticket_card(ticket))
+    await bot.send_message(events_chat_id, format_ticket_event_taken(ticket))
     await callback.answer("Заказ принят")
 
 
@@ -209,7 +209,7 @@ async def my_closed(message: Message) -> None:
 @router.callback_query(F.data.startswith("status_progress:"))
 async def status_in_progress(callback: CallbackQuery, bot: Bot) -> None:
     ticket_id = int(callback.data.split(":", 1)[1])
-    requests_chat_id = settings.requests_chat_id
+    events_chat_id = settings.events_chat_id
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
@@ -239,11 +239,10 @@ async def status_in_progress(callback: CallbackQuery, bot: Bot) -> None:
             await callback.answer("Нельзя сменить статус: заказ должен быть принят.", show_alert=True)
             return
 
-        requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
         await session.commit()
 
     await callback.message.edit_text(format_ticket_card(ticket))
-    await bot.send_message(requests_chat_id, format_ticket_card(ticket))
+    await bot.send_message(events_chat_id, format_ticket_event_status(ticket))
     await callback.answer("Статус обновлен")
 
 
@@ -426,7 +425,7 @@ async def close_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
         await callback.answer("Сессия закрытия устарела", show_alert=True)
         await state.clear()
         return
-    requests_chat_id = settings.requests_chat_id
+    events_chat_id = settings.events_chat_id
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
@@ -467,21 +466,19 @@ async def close_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
             await state.clear()
             return
 
-        requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
         await session.commit()
 
     await state.clear()
     await callback.message.answer("Заказ закрыт.")
     await callback.message.answer(format_ticket_card(ticket), reply_markup=await build_main_menu(user.role))
-    await bot.send_message(requests_chat_id, format_ticket_card(ticket))
-    await bot.send_message(requests_chat_id, format_order_report(ticket))
+    await bot.send_message(events_chat_id, format_ticket_event_closed(ticket))
     await callback.answer()
 
 
 @router.callback_query(F.data.startswith("transfer_sent:"))
 async def transfer_sent(callback: CallbackQuery, bot: Bot) -> None:
     ticket_id = int(callback.data.split(":", 1)[1])
-    requests_chat_id = settings.requests_chat_id
+    events_chat_id = settings.events_chat_id
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
@@ -511,11 +508,10 @@ async def transfer_sent(callback: CallbackQuery, bot: Bot) -> None:
             await callback.answer("Нельзя отметить перевод: заказ не закрыт или перевод уже отмечен.", show_alert=True)
             return
 
-        requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
         await session.commit()
 
     await callback.message.edit_text(format_ticket_card(ticket))
-    await bot.send_message(requests_chat_id, format_ticket_card(ticket))
+    await bot.send_message(events_chat_id, format_ticket_event_transfer(ticket))
     await callback.answer("Отметили перевод")
 
 
@@ -575,7 +571,7 @@ async def transfer_confirm_prompt(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("transfer_confirm_yes:"))
 async def transfer_confirm(callback: CallbackQuery, bot: Bot) -> None:
     ticket_id = int(callback.data.split(":", 1)[1])
-    requests_chat_id = settings.requests_chat_id
+    events_chat_id = settings.events_chat_id
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
@@ -605,11 +601,10 @@ async def transfer_confirm(callback: CallbackQuery, bot: Bot) -> None:
             await callback.answer("Нельзя подтвердить перевод", show_alert=True)
             return
 
-        requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
         await session.commit()
 
     await callback.message.edit_text(format_ticket_card(ticket))
-    await bot.send_message(requests_chat_id, format_ticket_card(ticket))
+    await bot.send_message(events_chat_id, format_ticket_event_transfer(ticket))
     await callback.answer("Перевод подтвержден")
 
 
@@ -621,7 +616,7 @@ async def transfer_confirm_cancel(callback: CallbackQuery) -> None:
 @router.callback_query(F.data.startswith("transfer_reject:"))
 async def transfer_reject(callback: CallbackQuery, bot: Bot) -> None:
     ticket_id = int(callback.data.split(":", 1)[1])
-    requests_chat_id = settings.requests_chat_id
+    events_chat_id = settings.events_chat_id
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
@@ -651,9 +646,8 @@ async def transfer_reject(callback: CallbackQuery, bot: Bot) -> None:
             await callback.answer("Нельзя отклонить перевод", show_alert=True)
             return
 
-        requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
         await session.commit()
 
     await callback.message.edit_text(format_ticket_card(ticket))
-    await bot.send_message(requests_chat_id, format_ticket_card(ticket))
+    await bot.send_message(events_chat_id, format_ticket_event_transfer(ticket))
     await callback.answer("Перевод отклонен")

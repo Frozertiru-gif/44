@@ -5,7 +5,7 @@ from typing import Iterable
 
 from app.db.enums import LeadAdSource, LeadStatus, TicketStatus, ticket_category_label
 from app.domain.enums_mapping import ad_source_label
-from app.db.models import Lead, Ticket
+from app.db.models import Lead, Ticket, User
 
 
 LEAD_STATUS_LABELS = {
@@ -78,6 +78,29 @@ def format_ticket_card(ticket: Ticket) -> str:
     )
 
 
+def format_ticket_public(ticket: Ticket) -> str:
+    repeat_label = "⚠️ ПОВТОР\n" if ticket.is_repeat else ""
+    scheduled = ticket.scheduled_at.strftime("%Y-%m-%d %H:%M") if ticket.scheduled_at else "Не указано"
+    client_line = "-"
+    if ticket.client_name or ticket.client_age_estimate:
+        name = ticket.client_name or "Не указано"
+        age = ticket.client_age_estimate if ticket.client_age_estimate is not None else "?"
+        client_line = f"{name} ({age})"
+    note = ticket.special_note or "-"
+    ad = ad_source_label(ticket.ad_source)
+    status = ticket.status.value if ticket.status else "-"
+    return (
+        f"{repeat_label}Заказ #{ticket.id}\n"
+        f"Категория: {ticket_category_label(ticket.category)}\n"
+        f"Удобное время: {scheduled}\n"
+        f"Клиент: {client_line}\n"
+        f"Проблема: {ticket.problem_text}\n"
+        f"Пометки: {note}\n"
+        f"Реклама: {ad}\n"
+        f"Статус: {status}"
+    )
+
+
 def format_ticket_preview(data: dict) -> str:
     repeat_label = "⚠️ ПОВТОР\n" if data.get("is_repeat") else ""
     scheduled_at = data.get("scheduled_at")
@@ -121,7 +144,6 @@ def format_lead_card(lead: Lead, *, repeat_count: int | None = None) -> str:
     status_label = LEAD_STATUS_LABELS.get(lead.status, lead.status.value)
     lines = [
         f"📥 Сырая заявка #{lead_id_short}",
-        f"Телефон: {lead.client_phone or '-'}",
         f"Клиент: {lead.client_name or '-'}",
         f"Удобно: {scheduled}",
         f"Проблема: {lead.problem_text}",
@@ -134,6 +156,41 @@ def format_lead_card(lead: Lead, *, repeat_count: int | None = None) -> str:
     if repeat_count:
         lines.append(f"По телефону найдены прошлые заявки: {repeat_count}")
     return "\n".join(lines)
+
+
+def format_user_label(user: User | None) -> str:
+    if not user:
+        return "-"
+    if user.username:
+        return f"@{user.username}"
+    if user.display_name:
+        return user.display_name
+    return f"ID {user.id}"
+
+
+def format_ticket_event_taken(ticket: Ticket) -> str:
+    executor_label = format_user_label(ticket.assigned_executor)
+    return f"✅ Заявка #{ticket.id} принята: исполнитель {executor_label}"
+
+
+def format_ticket_event_status(ticket: Ticket) -> str:
+    return f"🛠 Заявка #{ticket.id} статус: {ticket.status.value}"
+
+
+def format_ticket_event_closed(ticket: Ticket) -> str:
+    revenue = ticket.revenue if ticket.revenue is not None else "-"
+    expense = ticket.expense if ticket.expense is not None else "-"
+    profit = ticket.net_profit if ticket.net_profit is not None else "-"
+    return f"📦 Заявка #{ticket.id} закрыта: доход={revenue}, расход={expense}, чистая={profit}"
+
+
+def format_ticket_event_transfer(ticket: Ticket) -> str:
+    status = ticket.transfer_status.value if ticket.transfer_status else "-"
+    return f"💸 Заявка #{ticket.id} перевод: {status}"
+
+
+def format_ticket_event_cancelled(ticket: Ticket) -> str:
+    return f"❌ Заявка #{ticket.id} отменена"
 
 
 def format_executor_label(ticket: Ticket) -> str:

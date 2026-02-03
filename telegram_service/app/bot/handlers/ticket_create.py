@@ -352,7 +352,7 @@ async def ticket_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) -
     await bot.send_message(
         requests_chat_id,
         format_ticket_card(ticket),
-        reply_markup=request_chat_keyboard(ticket.id, bot_info.username),
+        reply_markup=request_chat_keyboard(ticket, bot_info.username),
     )
 
     if lead and lead_message_chat_id and lead_message_id:

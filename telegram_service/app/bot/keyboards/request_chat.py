@@ -1,18 +1,22 @@
-from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from uuid import UUID
 
+from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
-def request_chat_keyboard(ticket_id: int, bot_username: str) -> InlineKeyboardMarkup:
-    deep_link = f"https://t.me/{bot_username}?start=ticket_{ticket_id}"
-    return InlineKeyboardMarkup(
-        inline_keyboard=[
-            [InlineKeyboardButton(text="👀 Открыть в боте", url=deep_link)],
-            [
-                InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit:{ticket_id}"),
-                InlineKeyboardButton(text="❌ Отменить", callback_data=f"cancel:{ticket_id}"),
-            ],
-        ]
-    )
+from app.db.enums import TicketStatus
+from app.db.models import Ticket
+
+
+def request_chat_keyboard(ticket: Ticket, bot_username: str) -> InlineKeyboardMarkup:
+    deep_link = f"https://t.me/{bot_username}?start=ticket_{ticket.id}"
+    buttons = [
+        [InlineKeyboardButton(text="👀 Открыть в боте", url=deep_link)],
+    ]
+    action_row = [InlineKeyboardButton(text="✏️ Редактировать", callback_data=f"edit:{ticket.id}")]
+    if ticket.status == TicketStatus.READY_FOR_WORK and ticket.assigned_executor_id is None:
+        action_row.append(InlineKeyboardButton(text="✅ Принять заказ", callback_data=f"request_take:{ticket.id}"))
+    if action_row:
+        buttons.append(action_row)
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
 def lead_request_keyboard(lead_id: UUID) -> InlineKeyboardMarkup:

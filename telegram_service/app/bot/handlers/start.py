@@ -27,10 +27,15 @@ async def start_handler(message: Message, command: CommandObject, bot: Bot) -> N
     if args and args.startswith("ticket_"):
         ticket_id = int(args.replace("ticket_", ""))
         async with async_session_factory() as session:
-            ticket = await ticket_service.get_ticket(session, ticket_id)
+            user = await user_service.ensure_user(
+                session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            )
+            ticket = await ticket_service.get_ticket_for_actor(session, ticket_id, user)
         if ticket:
             await message.answer(format_ticket_card(ticket))
             return
+        await message.answer("Нет доступа к заказу.")
+        return
 
     if not user.is_active:
         await message.answer("У вас нет доступа. Обратитесь к администратору.")

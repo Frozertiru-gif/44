@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -98,7 +98,7 @@ class TicketService:
         return list(result.scalars().all())
 
     async def list_my_active(self, session: AsyncSession, executor_id: int, limit: int = 20) -> list[Ticket]:
-        statuses = [TicketStatus.TAKEN, TicketStatus.IN_PROGRESS, TicketStatus.WAITING]
+        statuses = [TicketStatus.IN_WORK, TicketStatus.TAKEN, TicketStatus.IN_PROGRESS, TicketStatus.WAITING]
         result = await session.execute(
             select(Ticket)
             .where(Ticket.assigned_executor_id == executor_id, Ticket.status.in_(statuses))
@@ -140,6 +140,14 @@ class TicketService:
         )
         return result.scalar_one_or_none()
 
+    async def get_ticket_for_actor(self, session: AsyncSession, ticket_id: int, actor: User) -> Ticket | None:
+        ticket = await self.get_ticket(session, ticket_id)
+        if not ticket:
+            return None
+        if self._can_view_ticket(actor, ticket):
+            return ticket
+        return None
+
     async def cancel_ticket(self, session: AsyncSession, ticket: Ticket) -> Ticket:
         ticket.status = TicketStatus.CANCELLED
         await session.flush()
@@ -147,7 +155,11 @@ class TicketService:
 
     async def take_ticket(self, session: AsyncSession, ticket_id: int, actor_id: int) -> Ticket | None:
         """Assign a master to a ticket to prevent double-taking in a shared queue."""
-        if not await self._ensure_actor_role(session, actor_id, {UserRole.MASTER, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN}):
+        if not await self._ensure_actor_role(
+            session,
+            actor_id,
+            {UserRole.MASTER, UserRole.JUNIOR_MASTER, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN},
+        ):
             await self._log_permission_denied(
                 session,
                 actor_id=actor_id,
@@ -166,7 +178,7 @@ class TicketService:
             )
             .values(
                 assigned_executor_id=actor_id,
-                status=TicketStatus.TAKEN,
+                status=TicketStatus.IN_WORK,
                 taken_at=now,
                 updated_at=now,
             )
@@ -195,7 +207,11 @@ class TicketService:
         return ticket
 
     async def set_in_progress(self, session: AsyncSession, ticket_id: int, actor_id: int) -> Ticket | None:
-        if not await self._ensure_actor_role(session, actor_id, {UserRole.MASTER, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN}):
+        if not await self._ensure_actor_role(
+            session,
+            actor_id,
+            {UserRole.MASTER, UserRole.JUNIOR_MASTER, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN},
+        ):
             await self._log_permission_denied(
                 session,
                 actor_id=actor_id,
@@ -205,7 +221,7 @@ class TicketService:
             return None
         before_ticket = await self.get_ticket(session, ticket_id)
         now = datetime.utcnow()
-        allowed = [TicketStatus.TAKEN, TicketStatus.WAITING]
+        allowed = [TicketStatus.IN_WORK, TicketStatus.TAKEN, TicketStatus.WAITING]
         result = await session.execute(
             update(Ticket)
             .where(
@@ -251,7 +267,11 @@ class TicketService:
         ticket = await self.get_ticket_with_executor(session, ticket_id)
         if not ticket:
             return None
-        if not await self._ensure_actor_role(session, actor_id, {UserRole.MASTER, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN}):
+        if not await self._ensure_actor_role(
+            session,
+            actor_id,
+            {UserRole.MASTER, UserRole.JUNIOR_MASTER, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN},
+        ):
             await self._log_permission_denied(
                 session,
                 actor_id=actor_id,
@@ -497,6 +517,29 @@ class TicketService:
         )
         return list(result.scalars().all())
 
+    async def list_for_actor(
+        self,
+        session: AsyncSession,
+        actor: User,
+        *,
+        filter_key: str,
+        limit: int = 20,
+    ) -> list[Ticket]:
+        query = select(Ticket).order_by(Ticket.id.desc()).limit(limit)
+        if filter_key == "active":
+            query = query.where(Ticket.status != TicketStatus.CANCELLED)
+        elif filter_key == "repeat":
+            query = query.where(Ticket.is_repeat.is_(True))
+
+        access_filter = self._build_access_filter(actor)
+        if access_filter is False:
+            return []
+        if access_filter is not None:
+            query = query.where(access_filter)
+
+        result = await session.execute(query)
+        return list(result.scalars().all())
+
     async def _get_user_percent(self, session: AsyncSession, user_id: int, *, field: str) -> Decimal:
         result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
@@ -553,6 +596,38 @@ class TicketService:
         if not actor or actor.role not in allowed_roles:
             return False
         return True
+
+    def _build_access_filter(self, actor: User) -> bool | Any:
+        if actor.role in {UserRole.MASTER, UserRole.JUNIOR_MASTER}:
+            return or_(
+                and_(
+                    Ticket.status == TicketStatus.READY_FOR_WORK,
+                    Ticket.assigned_executor_id.is_(None),
+                ),
+                Ticket.assigned_executor_id == actor.id,
+            )
+        if actor.role in {
+            UserRole.ADMIN,
+            UserRole.JUNIOR_ADMIN,
+            UserRole.SUPER_ADMIN,
+            UserRole.SYS_ADMIN,
+        }:
+            return None
+        return False
+
+    def _can_view_ticket(self, actor: User, ticket: Ticket) -> bool:
+        if actor.role in {
+            UserRole.ADMIN,
+            UserRole.JUNIOR_ADMIN,
+            UserRole.SUPER_ADMIN,
+            UserRole.SYS_ADMIN,
+        }:
+            return True
+        if actor.role in {UserRole.MASTER, UserRole.JUNIOR_MASTER}:
+            return ticket.assigned_executor_id == actor.id or (
+                ticket.status == TicketStatus.READY_FOR_WORK and ticket.assigned_executor_id is None
+            )
+        return False
 
     async def _log_invalid_transition(
         self,

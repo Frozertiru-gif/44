@@ -34,13 +34,16 @@ class FinanceService:
         *,
         date_range: DateRange,
     ) -> dict[str, Decimal]:
+        to_transfer = func.coalesce(Ticket.net_profit, 0) - func.coalesce(
+            Ticket.executor_earned_amount, 0
+        )
         base = select(
             func.coalesce(func.sum(Ticket.executor_earned_amount), 0),
-            func.coalesce(func.sum(Ticket.net_profit), 0),
+            func.coalesce(func.sum(to_transfer), 0),
             func.coalesce(
                 func.sum(
                     case(
-                        (Ticket.transfer_status == TransferStatus.CONFIRMED, Ticket.net_profit),
+                        (Ticket.transfer_status == TransferStatus.CONFIRMED, to_transfer),
                         else_=0,
                     )
                 ),

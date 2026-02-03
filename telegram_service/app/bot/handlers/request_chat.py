@@ -93,12 +93,13 @@ async def request_take(callback: CallbackQuery, bot: Bot) -> None:
             await callback.answer("Нет доступа", show_alert=True)
             return
 
-        async with session.begin():
-            ticket = await ticket_service.take_ticket(session, ticket_id, user.id)
+        ticket = await ticket_service.take_ticket(session, ticket_id, user.id)
 
         if not ticket:
+            await session.rollback()
             await callback.answer("Заказ уже принят или недоступен.", show_alert=True)
             return
+        await session.commit()
 
         bot_info = await bot.get_me()
 

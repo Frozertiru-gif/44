@@ -13,12 +13,13 @@ from app.db.models import User
 logger = logging.getLogger(__name__)
 
 ROLE_PRIORITY = {
-    UserRole.JUNIOR_ADMIN: 0,
-    UserRole.JUNIOR_MASTER: 1,
-    UserRole.MASTER: 2,
-    UserRole.ADMIN: 3,
-    UserRole.SYS_ADMIN: 4,
-    UserRole.SUPER_ADMIN: 5,
+    UserRole.USER: 0,
+    UserRole.JUNIOR_ADMIN: 1,
+    UserRole.JUNIOR_MASTER: 2,
+    UserRole.MASTER: 3,
+    UserRole.ADMIN: 4,
+    UserRole.SYS_ADMIN: 5,
+    UserRole.SUPER_ADMIN: 6,
 }
 
 
@@ -31,6 +32,7 @@ class UserService:
         session: AsyncSession,
         tg_user_id: int,
         display_name: str | None,
+        username: str | None = None,
         log_diagnostics: bool = False,
     ) -> User:
         result = await session.execute(select(User).where(User.id == tg_user_id))
@@ -45,6 +47,7 @@ class UserService:
             reason = "sys_admin_env"
         if user:
             user.display_name = display_name
+            user.username = username
             if required_role and ROLE_PRIORITY[required_role] > ROLE_PRIORITY[user.role]:
                 old_role = user.role
                 user.role = required_role
@@ -67,9 +70,9 @@ class UserService:
                 )
             return user
 
-        role = required_role or UserRole.JUNIOR_ADMIN
+        role = required_role or UserRole.USER
 
-        user = User(id=tg_user_id, role=role, display_name=display_name, is_active=True)
+        user = User(id=tg_user_id, role=role, display_name=display_name, username=username, is_active=True)
         session.add(user)
         await session.flush()
         if log_diagnostics:

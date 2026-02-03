@@ -32,7 +32,10 @@ async def cancel_from_request_chat(callback: CallbackQuery) -> None:
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None,
         )
         if not user.is_active or user.role not in CANCEL_ROLES:
             await audit_service.log_audit_event(
@@ -77,7 +80,10 @@ async def request_take(callback: CallbackQuery, bot: Bot) -> None:
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None,
         )
         if not user.is_active or user.role not in MASTER_ROLES:
             await audit_service.log_audit_event(
@@ -131,7 +137,10 @@ async def lead_action(callback: CallbackQuery, state: FSMContext, bot: Bot) -> N
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None,
         )
         if not user.is_active or user.role not in CREATE_ROLES:
             await audit_service.log_audit_event(

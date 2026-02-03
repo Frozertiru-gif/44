@@ -21,7 +21,10 @@ project_settings_service = ProjectSettingsService()
 async def issues_dashboard(message: Message) -> None:
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None,
         )
         await session.commit()
         if not user.is_active or user.role not in {UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN}:

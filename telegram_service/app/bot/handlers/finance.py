@@ -78,7 +78,10 @@ def _period_from_key(key: str) -> tuple[date | None, date | None, str]:
 async def master_money_start(message: Message, state: FSMContext) -> None:
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None
         )
         await session.commit()
         if not user.is_active or user.role not in MASTER_ROLES:
@@ -101,7 +104,10 @@ async def master_money_start(message: Message, state: FSMContext) -> None:
 async def salary_start(message: Message, state: FSMContext) -> None:
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None
         )
         await session.commit()
         if not user.is_active:
@@ -127,7 +133,10 @@ async def salary_start(message: Message, state: FSMContext) -> None:
 async def project_summary_start(message: Message, state: FSMContext) -> None:
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None
         )
         await session.commit()
         if not user.is_active or user.role not in FINANCE_SUMMARY_ROLES:
@@ -150,7 +159,10 @@ async def project_summary_start(message: Message, state: FSMContext) -> None:
 async def export_start(message: Message, state: FSMContext) -> None:
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None
         )
         await session.commit()
         if not user.is_active or user.role not in FINANCE_EXPORT_ROLES:
@@ -187,6 +199,7 @@ async def finance_period_select(callback: CallbackQuery, state: FSMContext) -> N
         callback.message,
         callback.from_user.id,
         callback.from_user.full_name if callback.from_user else None,
+        callback.from_user.username if callback.from_user else None,
         flow,
         start_date,
         end_date,
@@ -228,6 +241,7 @@ async def finance_period_to(message: Message, state: FSMContext) -> None:
         message,
         message.from_user.id,
         message.from_user.full_name if message.from_user else None,
+        message.from_user.username if message.from_user else None,
         flow,
         start_date,
         date_value,
@@ -248,7 +262,10 @@ async def add_expense_start(message: Message, state: FSMContext) -> None:
 async def _start_transaction_flow(message: Message, state: FSMContext, transaction_type: ProjectTransactionType) -> None:
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None
         )
         await session.commit()
         if not user.is_active or user.role not in MANUAL_TX_ROLES:
@@ -327,7 +344,10 @@ async def transaction_date(message: Message, state: FSMContext) -> None:
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None
         )
         if not user.is_active or user.role not in MANUAL_TX_ROLES:
             await message.answer(f"Нет доступа. Ваша роль: {user.role.value}")
@@ -393,7 +413,10 @@ async def transaction_confirm(callback: CallbackQuery, state: FSMContext) -> Non
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         if not user.is_active or user.role not in MANUAL_TX_ROLES:
             await audit_service.log_audit_event(
@@ -429,7 +452,10 @@ async def transaction_confirm(callback: CallbackQuery, state: FSMContext) -> Non
 async def shares_list(message: Message, state: FSMContext) -> None:
     async with async_session_factory() as session:
         actor = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None
         )
         await session.commit()
         if not actor.is_active or actor.role not in FINANCE_SUMMARY_ROLES:
@@ -513,7 +539,10 @@ async def share_confirm(callback: CallbackQuery, state: FSMContext) -> None:
 
     async with async_session_factory() as session:
         actor = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         if not actor.is_active or actor.role not in FINANCE_SUMMARY_ROLES:
             await audit_service.log_audit_event(
@@ -550,6 +579,7 @@ async def _handle_flow(
     message: Message | None,
     tg_user_id: int,
     display_name: str | None,
+    username: str | None,
     flow: str,
     start_date: date | None,
     end_date: date | None,
@@ -558,7 +588,7 @@ async def _handle_flow(
     if message is None:
         return
     async with async_session_factory() as session:
-        actor = await user_service.ensure_user(session, tg_user_id, display_name)
+        actor = await user_service.ensure_user(session, tg_user_id, display_name, username)
         await session.commit()
         date_range = finance_service.build_range(start_date, end_date)
 

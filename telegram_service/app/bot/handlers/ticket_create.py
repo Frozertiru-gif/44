@@ -92,12 +92,15 @@ async def _advance_after_phone(message: Message, state: FSMContext) -> None:
 async def start_ticket_creation(message: Message, state: FSMContext) -> None:
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None
         )
         await session.commit()
 
     if not user.is_active or user.role not in CREATE_ROLES:
-        await message.answer("У вас нет прав для создания заказа.")
+        await message.answer("Нет доступа. Обратитесь к администратору.")
         return
 
     await state.clear()
@@ -282,7 +285,10 @@ async def ticket_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) -
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         if not user.is_active or user.role not in CREATE_ROLES:
             await audit_service.log_audit_event(

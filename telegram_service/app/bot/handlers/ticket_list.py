@@ -22,7 +22,10 @@ audit_service = AuditService()
 async def list_tickets(message: Message) -> None:
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None
         )
         await session.commit()
 
@@ -49,7 +52,10 @@ async def list_tickets_filtered(callback: CallbackQuery) -> None:
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         if not user.is_active or user.role not in TICKET_LIST_ROLES:
             await audit_service.log_audit_event(
@@ -77,7 +83,10 @@ async def open_ticket(callback: CallbackQuery) -> None:
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         ticket = await ticket_service.get_ticket_for_actor(session, ticket_id, user)
 
@@ -96,7 +105,10 @@ async def cancel_ticket(callback: CallbackQuery) -> None:
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         if not user.is_active or user.role not in CANCEL_ROLES:
             await audit_service.log_audit_event(

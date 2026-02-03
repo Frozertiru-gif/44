@@ -1,14 +1,20 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
-from app.db.enums import AdSource, TicketCategory
+from app.db.enums import AdSource, TicketCategory, ticket_category_label
 
 
 async def category_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=TicketCategory.PC.value), KeyboardButton(text=TicketCategory.TV.value)],
-            [KeyboardButton(text=TicketCategory.PHONE.value), KeyboardButton(text=TicketCategory.PRINTER.value)],
-            [KeyboardButton(text=TicketCategory.OTHER.value)],
+            [
+                KeyboardButton(text=ticket_category_label(TicketCategory.PC)),
+                KeyboardButton(text=ticket_category_label(TicketCategory.TV)),
+            ],
+            [
+                KeyboardButton(text=ticket_category_label(TicketCategory.PHONE)),
+                KeyboardButton(text=ticket_category_label(TicketCategory.PRINTER)),
+            ],
+            [KeyboardButton(text=ticket_category_label(TicketCategory.OTHER))],
         ],
         resize_keyboard=True,
     )

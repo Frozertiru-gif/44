@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Iterable
 
-from app.db.enums import AdSource, LeadAdSource, LeadStatus, TicketStatus
+from app.db.enums import AdSource, LeadAdSource, LeadStatus, TicketStatus, ticket_category_label
 from app.db.models import Lead, Ticket
 
 
@@ -63,7 +63,7 @@ def format_ticket_card(ticket: Ticket) -> str:
     finance = format_finance_block(ticket)
     return (
         f"{repeat_label}Заказ #{ticket.id}\n"
-        f"Категория: {ticket.category.value}\n"
+        f"Категория: {ticket_category_label(ticket.category)}\n"
         f"Телефон: {ticket.client_phone}\n"
         f"Удобное время: {scheduled}\n"
         f"Клиент: {client_line}\n"
@@ -94,7 +94,7 @@ def format_ticket_preview(data: dict) -> str:
     repeat_info = f"\nПовторы: {', '.join(map(str, repeat_ids))}" if repeat_ids else ""
     return (
         f"{repeat_label}Новый заказ\n"
-        f"Категория: {data.get('category').value}\n"
+        f"Категория: {ticket_category_label(data.get('category'))}\n"
         f"Телефон: {data.get('client_phone')}\n"
         f"Удобное время: {scheduled}\n"
         f"Клиент: {client_line}\n"
@@ -110,7 +110,7 @@ def format_ticket_list(tickets: Iterable[Ticket]) -> str:
     for ticket in tickets:
         marker = "⚠️" if ticket.is_repeat else ""
         status = "" if ticket.status == TicketStatus.READY_FOR_WORK else f" ({ticket.status.value})"
-        lines.append(f"#{ticket.id} {ticket.category.value} {ticket.client_phone} {marker}{status}")
+        lines.append(f"#{ticket.id} {ticket_category_label(ticket.category)} {ticket.client_phone} {marker}{status}")
     return "\n".join(lines) if lines else "Нет заказов."
 
 
@@ -177,7 +177,7 @@ def format_ticket_queue_card(ticket: Ticket) -> str:
         problem = f"{problem[:57]}..."
     return (
         f"{repeat_label}Заказ #{ticket.id}\n"
-        f"Категория: {ticket.category.value}\n"
+        f"Категория: {ticket_category_label(ticket.category)}\n"
         f"Телефон: {ticket.client_phone}\n"
         f"Удобное время: {scheduled}\n"
         f"Проблема: {problem}"

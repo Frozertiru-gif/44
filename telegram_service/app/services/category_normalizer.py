@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from app.db.enums import TicketCategory
+from app.db.enums import TICKET_CATEGORY_LABELS, TicketCategory
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,7 @@ _CATEGORY_ALIASES: dict[str, TicketCategory] = {
 
 _CATEGORY_NORMALIZATION_MAP: dict[str, TicketCategory] = {
     **{_normalize_token(category.value): category for category in TicketCategory},
+    **{_normalize_token(label): category for category, label in TICKET_CATEGORY_LABELS.items()},
     **{_normalize_token(alias): category for alias, category in _CATEGORY_ALIASES.items()},
 }
 

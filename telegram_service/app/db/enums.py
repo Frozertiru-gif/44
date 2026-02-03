@@ -45,11 +45,11 @@ def ticket_category_label(category: TicketCategory | None) -> str:
 
 
 class AdSource(str, Enum):
-    AVITO = "Авито"
-    FLYER = "Листовка"
-    CARD = "Визитка"
-    OTHER = "Другое"
-    UNKNOWN = "Неизвестно"
+    AVITO = "AVITO"
+    LEAFLET = "LEAFLET"
+    BUSINESS_CARD = "BUSINESS_CARD"
+    OTHER = "OTHER"
+    UNKNOWN = "UNKNOWN"
 
 
 class LeadStatus(str, Enum):

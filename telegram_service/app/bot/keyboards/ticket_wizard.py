@@ -1,6 +1,7 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
 
 from app.db.enums import AdSource, TicketCategory, ticket_category_label
+from app.domain.enums_mapping import ad_source_label
 
 
 async def category_keyboard() -> ReplyKeyboardMarkup:
@@ -53,9 +54,9 @@ async def special_note_keyboard() -> ReplyKeyboardMarkup:
 async def ad_source_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text=AdSource.AVITO.value), KeyboardButton(text=AdSource.FLYER.value)],
-            [KeyboardButton(text=AdSource.CARD.value), KeyboardButton(text=AdSource.OTHER.value)],
-            [KeyboardButton(text=AdSource.UNKNOWN.value)],
+            [KeyboardButton(text=ad_source_label(AdSource.AVITO)), KeyboardButton(text=ad_source_label(AdSource.LEAFLET))],
+            [KeyboardButton(text=ad_source_label(AdSource.BUSINESS_CARD)), KeyboardButton(text=ad_source_label(AdSource.OTHER))],
+            [KeyboardButton(text=ad_source_label(AdSource.UNKNOWN))],
         ],
         resize_keyboard=True,
     )

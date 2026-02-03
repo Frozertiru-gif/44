@@ -16,6 +16,7 @@ from app.bot.keyboards.finance import period_keyboard, share_list_keyboard
 from app.bot.states.finance import FinanceStates
 from app.core.config import get_settings
 from app.db.enums import ProjectTransactionType, UserRole, ticket_category_label
+from app.domain.enums_mapping import ad_source_label
 from app.db.models import User
 from app.db.session import async_session_factory
 from app.services.audit_service import AuditService
@@ -733,7 +734,7 @@ def _build_excel_report(*, tickets, transactions, summary, shares, date_range, u
                 ticket_category_label(ticket.category) if ticket.category else None,
                 ticket.client_phone,
                 ticket.scheduled_at,
-                ticket.ad_source.value if ticket.ad_source else None,
+                ad_source_label(ticket.ad_source) if ticket.ad_source else None,
                 created_by or ticket.created_by_admin_id,
                 executor or ticket.assigned_executor_id,
                 junior or ticket.junior_master_id,
@@ -765,7 +766,7 @@ def _build_excel_report(*, tickets, transactions, summary, shares, date_range, u
             [
                 ticket.id,
                 executor or ticket.assigned_executor_id,
-                ticket.ad_source.value if ticket.ad_source else None,
+                ad_source_label(ticket.ad_source) if ticket.ad_source else None,
                 ticket.revenue,
                 ticket.expense,
                 ticket.net_profit,

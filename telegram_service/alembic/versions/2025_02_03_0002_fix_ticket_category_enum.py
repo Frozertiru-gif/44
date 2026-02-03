@@ -58,8 +58,10 @@ def upgrade() -> None:
         op.execute(sa.text(f"CREATE TYPE ticket_category AS ENUM ({values_sql})"))
         return
 
-    for value in NEW_VALUES:
-        op.execute(sa.text(f"ALTER TYPE ticket_category ADD VALUE IF NOT EXISTS '{value}'"))
+    ctx = op.get_context()
+    with ctx.autocommit_block():
+        for value in NEW_VALUES:
+            op.execute(sa.text(f"ALTER TYPE ticket_category ADD VALUE IF NOT EXISTS '{value}'"))
 
     for legacy_value, new_value in LEGACY_VALUE_MAP.items():
         if not _enum_label_exists(bind, "ticket_category", legacy_value):

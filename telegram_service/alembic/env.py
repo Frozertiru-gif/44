@@ -53,35 +53,51 @@ async def run_migrations_online() -> None:
     )
 
     async with connectable.connect() as connection:
-        def do_run_migrations(sync_conn) -> None:
-            schema_name = settings.db_schema or "public"
-            safe_schema = schema_name.replace('"', '""')
-            context.configure(
-                connection=sync_conn,
-                target_metadata=target_metadata,
-                compare_type=True,
-                transaction_per_migration=True,
-                version_table_schema=settings.db_schema,
-            )
-            with context.begin_transaction():
-                if schema_name != "public":
-                    sync_conn.execute(
-                        text(f'CREATE SCHEMA IF NOT EXISTS "{safe_schema}"')
-                    )
-                context.run_migrations()
-                version_table = f"{schema_name}.alembic_version"
-                result = sync_conn.execute(
-                    text("select to_regclass(:table_name)"),
-                    {"table_name": version_table},
-                ).scalar()
-                if result is None:
-                    raise RuntimeError(
-                        f"Migration failed: missing version table {version_table}."
-                    )
+        async with connection.begin():
+            await connection.run_sync(ensure_schema)
+            await connection.run_sync(do_run_migrations)
 
-        await connection.run_sync(do_run_migrations)
+        await connection.run_sync(verify_post_commit)
 
     await connectable.dispose()
+
+
+def ensure_schema(sync_conn) -> None:
+    schema_name = settings.db_schema or "public"
+    if schema_name != "public":
+        safe_schema = schema_name.replace('"', '""')
+        sync_conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{safe_schema}"'))
+
+
+def do_run_migrations(sync_conn) -> None:
+    context.configure(
+        connection=sync_conn,
+        target_metadata=target_metadata,
+        compare_type=True,
+        transaction_per_migration=True,
+        version_table_schema=settings.db_schema,
+    )
+    with context.begin_transaction():
+        context.run_migrations()
+
+
+def verify_post_commit(sync_conn) -> None:
+    schema_name = settings.db_schema or "public"
+    missing_tables = []
+    for table in ("alembic_version", "users", "tickets"):
+        qualified_table = f"{schema_name}.{table}"
+        result = sync_conn.execute(
+            text("select to_regclass(:table_name)"),
+            {"table_name": qualified_table},
+        ).scalar()
+        if result is None:
+            missing_tables.append(qualified_table)
+    if missing_tables:
+        raise RuntimeError(
+            "Post-commit verification failed; missing tables: "
+            + ", ".join(missing_tables)
+            + "."
+        )
 
 
 def run_migrations() -> None:

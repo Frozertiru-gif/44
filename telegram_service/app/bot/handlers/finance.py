@@ -610,6 +610,7 @@ async def _handle_flow(
                 "💰 Мои деньги\n"
                 f"Период: {label}\n"
                 f"Начислено: {summary['earned']}\n"
+                f"Доля от кассы: {summary['cash_share_amount']}\n"
                 f"Должен перевести: {summary['net_profit']}\n"
                 f"Подтверждено: {summary['confirmed']}\n"
                 f"Ожидает: {summary['pending']}"

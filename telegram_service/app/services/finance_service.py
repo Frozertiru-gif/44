@@ -60,13 +60,33 @@ class FinanceService:
         admin_query = self._apply_range(admin_query, Ticket.closed_at, date_range)
         admin_result = await session.execute(admin_query)
         earned_admin = admin_result.scalar() or 0
-        earned = Decimal(earned_executor or 0) + Decimal(earned_admin or 0)
+        share_percent_query = select(ProjectShare.percent).where(
+            ProjectShare.user_id == master_id,
+            ProjectShare.is_active.is_(True),
+        )
+        share_percent_result = await session.execute(share_percent_query)
+        share_percent = share_percent_result.scalar_one_or_none()
+
+        cash_base_query = select(func.coalesce(func.sum(Ticket.net_profit), 0)).where(
+            Ticket.status == TicketStatus.CLOSED
+        )
+        cash_base_query = self._apply_range(cash_base_query, Ticket.closed_at, date_range)
+        cash_base_result = await session.execute(cash_base_query)
+        total_net_cash = Decimal(cash_base_result.scalar() or 0)
+        cash_share_amount = Decimal("0.00")
+        if share_percent:
+            cash_share_amount = self.round_money(
+                total_net_cash * Decimal(share_percent) / Decimal("100")
+            )
+
+        earned = Decimal(earned_executor or 0) + Decimal(earned_admin or 0) + cash_share_amount
         pending = Decimal(net_profit) - Decimal(confirmed)
         return {
             "earned": earned,
             "net_profit": Decimal(net_profit or 0),
             "confirmed": Decimal(confirmed or 0),
             "pending": pending if pending > 0 else Decimal("0.00"),
+            "cash_share_amount": cash_share_amount,
         }
 
     async def admin_salary(

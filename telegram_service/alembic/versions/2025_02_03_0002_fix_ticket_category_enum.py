@@ -64,7 +64,7 @@ def upgrade() -> None:
     for legacy_value, new_value in LEGACY_VALUE_MAP.items():
         if not _enum_label_exists(bind, "ticket_category", legacy_value):
             continue
-        op.execute(
+        bind.execute(
             sa.text(
                 """
                 UPDATE tickets

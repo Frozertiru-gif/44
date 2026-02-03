@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from io import BytesIO
+import logging
 
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
@@ -34,6 +35,7 @@ user_service = UserService()
 settings = get_settings()
 audit_service = AuditService()
 project_settings_service = ProjectSettingsService()
+log = logging.getLogger(__name__)
 
 
 def _parse_amount(value: str) -> Decimal | None:
@@ -181,7 +183,15 @@ async def finance_period_select(callback: CallbackQuery, state: FSMContext) -> N
         return
 
     start_date, end_date, label = _period_from_key(period_key)
-    await _handle_flow(callback.message, flow, start_date, end_date, label)
+    await _handle_flow(
+        callback.message,
+        callback.from_user.id,
+        callback.from_user.full_name if callback.from_user else None,
+        flow,
+        start_date,
+        end_date,
+        label,
+    )
     await callback.answer()
 
 
@@ -214,7 +224,15 @@ async def finance_period_to(message: Message, state: FSMContext) -> None:
         await message.answer("Дата окончания должна быть позже даты начала.")
         return
     await state.clear()
-    await _handle_flow(message, flow, start_date, date_value, "Произвольно")
+    await _handle_flow(
+        message,
+        message.from_user.id,
+        message.from_user.full_name if message.from_user else None,
+        flow,
+        start_date,
+        date_value,
+        "Произвольно",
+    )
 
 
 @router.message(F.text == "➕ Добавить доход")
@@ -530,6 +548,8 @@ async def share_confirm(callback: CallbackQuery, state: FSMContext) -> None:
 
 async def _handle_flow(
     message: Message | None,
+    tg_user_id: int,
+    display_name: str | None,
     flow: str,
     start_date: date | None,
     end_date: date | None,
@@ -538,26 +558,24 @@ async def _handle_flow(
     if message is None:
         return
     async with async_session_factory() as session:
-        user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
-        )
+        actor = await user_service.ensure_user(session, tg_user_id, display_name)
         await session.commit()
         date_range = finance_service.build_range(start_date, end_date)
 
         if flow == "master":
-            if not user.is_active or user.role not in MASTER_ROLES:
+            if not actor.is_active or actor.role not in MASTER_ROLES:
                 await audit_service.log_audit_event(
                     session,
-                    actor_id=user.id,
+                    actor_id=actor.id,
                     action="PERMISSION_DENIED",
                     entity_type="finance",
                     entity_id=None,
                     payload={"reason": "MASTER_MONEY"},
                 )
                 await session.commit()
-                await message.answer(f"Нет доступа. Ваша роль: {user.role.value}")
+                await message.answer(f"Нет доступа. Ваша роль: {actor.role.value}")
                 return
-            summary = await finance_service.master_money(session, user.id, date_range=date_range)
+            summary = await finance_service.master_money(session, actor.id, date_range=date_range)
             await message.answer(
                 "💰 Мои деньги\n"
                 f"Период: {label}\n"
@@ -569,49 +587,49 @@ async def _handle_flow(
             return
 
         if flow == "salary":
-            if not user.is_active:
+            if not actor.is_active:
                 await audit_service.log_audit_event(
                     session,
-                    actor_id=user.id,
+                    actor_id=actor.id,
                     action="PERMISSION_DENIED",
                     entity_type="finance",
                     entity_id=None,
                     payload={"reason": "SALARY_VIEW"},
                 )
                 await session.commit()
-                await message.answer(f"Нет доступа. Ваша роль: {user.role.value}")
+                await message.answer(f"Нет доступа. Ваша роль: {actor.role.value}")
                 return
-            if user.role == UserRole.ADMIN or user.role in FINANCE_SUMMARY_ROLES:
-                amount = await finance_service.admin_salary(session, user.id, date_range=date_range)
-            elif user.role == UserRole.JUNIOR_MASTER:
-                amount = await finance_service.junior_salary(session, user.id, date_range=date_range)
+            if actor.role == UserRole.ADMIN or actor.role in FINANCE_SUMMARY_ROLES:
+                amount = await finance_service.admin_salary(session, actor.id, date_range=date_range)
+            elif actor.role == UserRole.JUNIOR_MASTER:
+                amount = await finance_service.junior_salary(session, actor.id, date_range=date_range)
             else:
                 await audit_service.log_audit_event(
                     session,
-                    actor_id=user.id,
+                    actor_id=actor.id,
                     action="PERMISSION_DENIED",
                     entity_type="finance",
                     entity_id=None,
                     payload={"reason": "SALARY_VIEW"},
                 )
                 await session.commit()
-                await message.answer(f"Нет доступа. Ваша роль: {user.role.value}")
+                await message.answer(f"Нет доступа. Ваша роль: {actor.role.value}")
                 return
             await message.answer(f"💵 Моя зарплата\nПериод: {label}\nСумма: {amount}")
             return
 
         if flow == "summary":
-            if not user.is_active or user.role not in FINANCE_SUMMARY_ROLES:
+            if not actor.is_active or actor.role not in FINANCE_SUMMARY_ROLES:
                 await audit_service.log_audit_event(
                     session,
-                    actor_id=user.id,
+                    actor_id=actor.id,
                     action="PERMISSION_DENIED",
                     entity_type="finance",
                     entity_id=None,
                     payload={"reason": "FINANCE_SUMMARY"},
                 )
                 await session.commit()
-                await message.answer(f"Нет доступа. Ваша роль: {user.role.value}")
+                await message.answer(f"Нет доступа. Ваша роль: {actor.role.value}")
                 return
             summary = await finance_service.project_summary(session, date_range=date_range)
             await message.answer(
@@ -634,17 +652,18 @@ async def _handle_flow(
             return
 
         if flow == "export":
-            if not user.is_active or user.role not in FINANCE_EXPORT_ROLES:
+            log.info("FINANCE_ACCESS tg=%s actor_id=%s role=%s", tg_user_id, actor.id, actor.role)
+            if not actor.is_active or actor.role not in FINANCE_EXPORT_ROLES:
                 await audit_service.log_audit_event(
                     session,
-                    actor_id=user.id,
+                    actor_id=actor.id,
                     action="PERMISSION_DENIED",
                     entity_type="finance",
                     entity_id=None,
                     payload={"reason": "FINANCE_EXPORT"},
                 )
                 await session.commit()
-                await message.answer(f"Нет доступа. Ваша роль: {user.role.value}")
+                await message.answer(f"Нет доступа. Ваша роль: {actor.role.value}")
                 return
             tickets = await finance_service.list_tickets_for_export(session, date_range=date_range)
             transactions = await finance_service.list_manual_transactions(session, date_range=date_range)
@@ -660,7 +679,7 @@ async def _handle_flow(
                 user_map=user_map,
             )
             filename = f"project_report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
-            target_chat = settings.finance_export_chat_id or user.id
+            target_chat = settings.finance_export_chat_id or actor.id
             await message.bot.send_document(
                 chat_id=target_chat,
                 document=BufferedInputFile(content.getvalue(), filename=filename),

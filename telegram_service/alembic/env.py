@@ -55,10 +55,10 @@ async def run_migrations_online() -> None:
     async with connectable.connect() as connection:
         schema_name = settings.db_schema or "public"
         safe_schema = schema_name.replace('"', '""')
-        await connection.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{safe_schema}"'))
-        await connection.execute(text(f'SET search_path TO "{safe_schema}", public'))
 
         def do_run_migrations(sync_conn) -> None:
+            sync_conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{safe_schema}"'))
+            sync_conn.execute(text(f'SET search_path TO "{safe_schema}", public'))
             context.configure(
                 connection=sync_conn,
                 target_metadata=target_metadata,
@@ -68,8 +68,6 @@ async def run_migrations_online() -> None:
             )
             with context.begin_transaction():
                 context.run_migrations()
-
-        def verify_version_table(sync_conn) -> None:
             version_table = f"{schema_name}.alembic_version"
             result = sync_conn.execute(
                 text("select to_regclass(:table_name)"),
@@ -81,7 +79,6 @@ async def run_migrations_online() -> None:
                 )
 
         await connection.run_sync(do_run_migrations)
-        await connection.run_sync(verify_version_table)
 
     await connectable.dispose()
 

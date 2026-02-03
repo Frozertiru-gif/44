@@ -15,7 +15,7 @@ from app.bot.keyboards.confirmations import confirm_action_keyboard
 from app.bot.keyboards.finance import period_keyboard, share_list_keyboard
 from app.bot.states.finance import FinanceStates
 from app.core.config import get_settings
-from app.db.enums import ProjectTransactionType, UserRole
+from app.db.enums import ProjectTransactionType, UserRole, ticket_category_label
 from app.db.models import User
 from app.db.session import async_session_factory
 from app.services.audit_service import AuditService
@@ -730,7 +730,7 @@ def _build_excel_report(*, tickets, transactions, summary, shares, date_range, u
             [
                 ticket.id,
                 ticket.status.value if ticket.status else None,
-                ticket.category.value if ticket.category else None,
+                ticket_category_label(ticket.category) if ticket.category else None,
                 ticket.client_phone,
                 ticket.scheduled_at,
                 ticket.ad_source.value if ticket.ad_source else None,

@@ -39,11 +39,11 @@ ticket_status_enum = postgresql.ENUM(
 )
 
 ticket_category_enum = postgresql.ENUM(
-    "ПК",
-    "ТВ",
-    "Телефон",
-    "Принтер",
-    "Другое",
+    "PC",
+    "TV",
+    "PHONE",
+    "PRINTER",
+    "OTHER",
     name="ticket_category",
     create_type=False,
 )

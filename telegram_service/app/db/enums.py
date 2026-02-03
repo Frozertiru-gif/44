@@ -22,11 +22,26 @@ class TicketStatus(str, Enum):
 
 
 class TicketCategory(str, Enum):
-    PC = "ПК"
-    TV = "ТВ"
-    PHONE = "Телефон"
-    PRINTER = "Принтер"
-    OTHER = "Другое"
+    PC = "PC"
+    TV = "TV"
+    PHONE = "PHONE"
+    PRINTER = "PRINTER"
+    OTHER = "OTHER"
+
+
+TICKET_CATEGORY_LABELS: dict[TicketCategory, str] = {
+    TicketCategory.PC: "ПК",
+    TicketCategory.TV: "ТВ",
+    TicketCategory.PHONE: "Телефон",
+    TicketCategory.PRINTER: "Принтер",
+    TicketCategory.OTHER: "Другое",
+}
+
+
+def ticket_category_label(category: TicketCategory | None) -> str:
+    if category is None:
+        return "-"
+    return TICKET_CATEGORY_LABELS.get(category, category.value)
 
 
 class AdSource(str, Enum):

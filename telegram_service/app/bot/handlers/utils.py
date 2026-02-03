@@ -47,9 +47,18 @@ def parse_time(value: str, target_date: date) -> datetime | None:
         return None
 
 
+def format_ticket_schedule(preferred_date_dm: str | None, scheduled_at: datetime | None) -> str:
+    if scheduled_at:
+        date_part = preferred_date_dm or scheduled_at.strftime("%d:%m")
+        return f"{date_part} {scheduled_at.strftime('%H:%M')}"
+    if preferred_date_dm:
+        return preferred_date_dm
+    return "Не указано"
+
+
 def format_ticket_card(ticket: Ticket) -> str:
     repeat_label = "⚠️ ПОВТОР\n" if ticket.is_repeat else ""
-    scheduled = ticket.scheduled_at.strftime("%Y-%m-%d %H:%M") if ticket.scheduled_at else "Не указано"
+    scheduled = format_ticket_schedule(ticket.preferred_date_dm, ticket.scheduled_at)
     client_line = "-"
     if ticket.client_name or ticket.client_age_estimate:
         name = ticket.client_name or "Не указано"
@@ -65,6 +74,7 @@ def format_ticket_card(ticket: Ticket) -> str:
         f"{repeat_label}Заказ #{ticket.id}\n"
         f"Категория: {ticket_category_label(ticket.category)}\n"
         f"Телефон: {ticket.client_phone}\n"
+        f"Адрес: {ticket.client_address or '-'}\n"
         f"Удобное время: {scheduled}\n"
         f"Клиент: {client_line}\n"
         f"Проблема: {ticket.problem_text}\n"
@@ -81,7 +91,7 @@ def format_ticket_card(ticket: Ticket) -> str:
 def format_ticket_preview(data: dict) -> str:
     repeat_label = "⚠️ ПОВТОР\n" if data.get("is_repeat") else ""
     scheduled_at = data.get("scheduled_at")
-    scheduled = scheduled_at.strftime("%Y-%m-%d %H:%M") if scheduled_at else "Не указано"
+    scheduled = format_ticket_schedule(data.get("preferred_date_dm"), scheduled_at)
     client_line = "-"
     if data.get("client_name") or data.get("client_age_estimate") is not None:
         name = data.get("client_name") or "Не указано"
@@ -96,6 +106,7 @@ def format_ticket_preview(data: dict) -> str:
         f"{repeat_label}Новый заказ\n"
         f"Категория: {ticket_category_label(data.get('category'))}\n"
         f"Телефон: {data.get('client_phone')}\n"
+        f"Адрес: {data.get('client_address') or '-'}\n"
         f"Удобное время: {scheduled}\n"
         f"Клиент: {client_line}\n"
         f"Проблема: {data.get('problem_text')}\n"
@@ -171,7 +182,7 @@ def format_finance_block(ticket: Ticket) -> str:
 
 def format_ticket_queue_card(ticket: Ticket) -> str:
     repeat_label = "⚠️ ПОВТОР\n" if ticket.is_repeat else ""
-    scheduled = ticket.scheduled_at.strftime("%Y-%m-%d %H:%M") if ticket.scheduled_at else "Не указано"
+    scheduled = format_ticket_schedule(ticket.preferred_date_dm, ticket.scheduled_at)
     problem = ticket.problem_text.replace("\n", " ").strip()
     if len(problem) > 60:
         problem = f"{problem[:57]}..."
@@ -179,6 +190,7 @@ def format_ticket_queue_card(ticket: Ticket) -> str:
         f"{repeat_label}Заказ #{ticket.id}\n"
         f"Категория: {ticket_category_label(ticket.category)}\n"
         f"Телефон: {ticket.client_phone}\n"
+        f"Адрес: {ticket.client_address or '-'}\n"
         f"Удобное время: {scheduled}\n"
         f"Проблема: {problem}"
     )

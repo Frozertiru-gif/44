@@ -4,6 +4,7 @@ from aiogram.fsm.state import State, StatesGroup
 class TicketCreateStates(StatesGroup):
     category = State()
     phone = State()
+    client_address = State()
     repeat_confirm = State()
     schedule_choice = State()
     schedule_time = State()

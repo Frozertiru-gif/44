@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 from uuid import UUID
 
@@ -54,6 +55,10 @@ def _is_value_set(data: dict, key: str) -> bool:
 
 async def _advance_after_schedule(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
+    if data.get("scheduled_at") is None and not _is_value_set(data, "preferred_date_dm"):
+        await state.set_state(TicketCreateStates.schedule_choice)
+        await message.answer("Удобная дата?", reply_markup=await schedule_keyboard())
+        return
     if not _is_value_set(data, "client_name"):
         await state.set_state(TicketCreateStates.client_name)
         await message.answer("Имя клиента:", reply_markup=await name_keyboard())
@@ -81,7 +86,11 @@ async def _advance_after_schedule(message: Message, state: FSMContext) -> None:
 
 async def _advance_after_phone(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
-    if data.get("scheduled_at") is None:
+    if not _is_value_set(data, "client_address"):
+        await state.set_state(TicketCreateStates.client_address)
+        await message.answer("Введите адрес клиента:")
+        return
+    if data.get("scheduled_at") is None and not _is_value_set(data, "preferred_date_dm"):
         await state.set_state(TicketCreateStates.schedule_choice)
         await message.answer("Удобная дата?", reply_markup=await schedule_keyboard())
         return
@@ -159,6 +168,16 @@ async def ticket_phone(message: Message, state: FSMContext) -> None:
     await _advance_after_phone(message, state)
 
 
+@router.message(TicketCreateStates.client_address)
+async def ticket_client_address(message: Message, state: FSMContext) -> None:
+    text = (message.text or "").strip()
+    if len(text) < 5:
+        await message.answer("Введите адрес клиента (не менее 5 символов).")
+        return
+    await state.update_data(client_address=text)
+    await _advance_after_phone(message, state)
+
+
 @router.callback_query(F.data == "repeat_continue")
 async def repeat_continue(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
@@ -168,17 +187,31 @@ async def repeat_continue(callback: CallbackQuery, state: FSMContext) -> None:
 @router.message(TicketCreateStates.schedule_choice)
 async def ticket_schedule_choice(message: Message, state: FSMContext) -> None:
     text = message.text or ""
-    if text not in {"Сегодня", "Завтра", "Пропустить"}:
-        await message.answer("Выберите вариант кнопкой.")
-        return
-
     if text == "Пропустить":
-        await state.update_data(scheduled_at=None)
-        await _advance_after_schedule(message, state)
+        await message.answer("Дата обязательна.")
         return
 
-    target_date = date.today() if text == "Сегодня" else date.today() + timedelta(days=1)
+    if text in {"Сегодня", "Завтра"}:
+        target_date = date.today() if text == "Сегодня" else date.today() + timedelta(days=1)
+        preferred_date_dm = target_date.strftime("%d:%m")
+    else:
+        match = re.fullmatch(r"\d{2}:\d{2}", text.strip())
+        if not match:
+            await message.answer("Введите дату в формате дд:мм (например 04:02).")
+            return
+        day, month = map(int, text.split(":", maxsplit=1))
+        if not (1 <= day <= 31 and 1 <= month <= 12):
+            await message.answer("Введите дату в формате дд:мм (например 04:02).")
+            return
+        try:
+            target_date = date(date.today().year, month, day)
+        except ValueError:
+            await message.answer("Введите дату в формате дд:мм (например 04:02).")
+            return
+        preferred_date_dm = text
+
     await state.update_data(schedule_date=target_date)
+    await state.update_data(preferred_date_dm=preferred_date_dm)
     await state.set_state(TicketCreateStates.schedule_time)
     await message.answer("Введите время (HH:MM):")
 
@@ -198,6 +231,8 @@ async def ticket_schedule_time(message: Message, state: FSMContext) -> None:
         return
 
     await state.update_data(scheduled_at=schedule)
+    if not _is_value_set(data, "preferred_date_dm"):
+        await state.update_data(preferred_date_dm=schedule.strftime("%d:%m"))
     await _advance_after_schedule(message, state)
 
 
@@ -279,6 +314,17 @@ async def ticket_ad_source(message: Message, state: FSMContext) -> None:
 @router.callback_query(F.data == "ticket_confirm")
 async def ticket_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) -> None:
     data = await state.get_data()
+    preferred_date_dm = data.get("preferred_date_dm")
+    scheduled_at = data.get("scheduled_at")
+    client_address = data.get("client_address")
+    if not client_address:
+        await callback.answer("Укажите адрес клиента.", show_alert=True)
+        return
+    if not scheduled_at and not preferred_date_dm:
+        await callback.answer("Укажите удобную дату.", show_alert=True)
+        return
+    if scheduled_at and not preferred_date_dm:
+        preferred_date_dm = scheduled_at.strftime("%d:%m")
     lead_id = data.get("lead_id")
     lead_message_chat_id = data.get("lead_message_chat_id")
     lead_message_id = data.get("lead_message_id")
@@ -318,10 +364,12 @@ async def ticket_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) -
         ticket = await ticket_service.create_ticket(
             session,
             category=data["category"],
-            scheduled_at=data.get("scheduled_at"),
+            scheduled_at=scheduled_at,
+            preferred_date_dm=preferred_date_dm,
             client_name=data.get("client_name"),
             client_age_estimate=data.get("client_age_estimate"),
             client_phone=data["client_phone"],
+            client_address=client_address,
             problem_text=data["problem_text"],
             special_note=data.get("special_note"),
             ad_source=data.get("ad_source", AdSource.UNKNOWN),

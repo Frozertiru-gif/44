@@ -10,9 +10,10 @@
 ## Настройка окружения
 
 1. Скопируйте `.env.example` в `.env` и заполните значения.
-2. В docker-режиме `DATABASE_URL` должен указывать на сервис `db` внутри Compose:
+2. Запускайте Compose из каталога `telegram_service/`, он читает `.env` именно оттуда.
+3. В docker-режиме `DATABASE_URL` должен указывать на сервис `db` внутри Compose:
    `postgresql+asyncpg://telegram:telegram@db:5432/telegram_service`.
-3. Укажите `SUPER_ADMIN` (один tg_id) и/или `SYS_ADMIN_IDS` через запятую (tg_id администраторов), чтобы они получили роли
+4. Укажите `SUPER_ADMIN` (один tg_id) и/или `SYS_ADMIN_IDS` через запятую (tg_id администраторов), чтобы они получили роли
    SUPER_ADMIN/SYS_ADMIN после первого `/start`.
 
 Обязательные переменные окружения:
@@ -22,6 +23,13 @@
 - `DB_SCHEMA` (опционально, по умолчанию `public`)
 - `REQUESTS_CHAT_ID`
 - `SUPER_ADMIN` или `SYS_ADMIN_IDS` (минимум одно значение)
+
+Пример корректных значений:
+
+```bash
+DATABASE_URL=postgresql+asyncpg://telegram:telegram@db:5432/telegram_service
+DB_SCHEMA=public
+```
 
 ## Быстрый старт (Docker)
 
@@ -46,6 +54,22 @@ docker compose logs -f bot
 
 ```bash
 docker compose run --rm migrations
+```
+
+## Диагностика, где лежат таблицы
+
+SQL-проверки:
+
+```sql
+SELECT current_database(), current_schema(), current_setting('search_path');
+SELECT to_regclass('public.users');
+SELECT to_regclass('<DB_SCHEMA>.users');
+```
+
+Отчёт без падения процесса (report-only режим):
+
+```bash
+docker compose run --rm bot python -m app.db.bootstrap --report
 ```
 
 ## Остановка

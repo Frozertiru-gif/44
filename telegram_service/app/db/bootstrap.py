@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+import argparse
 from typing import Iterable
 from sqlalchemy import text
 from sqlalchemy.engine.url import make_url
@@ -44,10 +45,18 @@ async def _wait_for_db(timeout_seconds: int = 60, interval_seconds: int = 2) -> 
     raise RuntimeError("Database did not become available in time") from last_error
 
 
+def _normalize_search_path_item(item: str) -> str:
+    value = item.strip()
+    if value.startswith('"') and value.endswith('"') and len(value) >= 2:
+        value = value[1:-1].replace('""', '"')
+    return value
+
+
 async def _fetch_diagnostics(expected_heads: Iterable[str]) -> dict[str, object]:
     settings = get_settings()
     engine = create_engine(settings.database_url, schema=settings.db_schema, poolclass=NullPool)
     schema = settings.db_schema or "public"
+    safe_schema = schema.replace('"', '""')
 
     async with engine.connect() as connection:
         db_info = await connection.execute(
@@ -55,18 +64,23 @@ async def _fetch_diagnostics(expected_heads: Iterable[str]) -> dict[str, object]
         )
         current_database, current_schema, search_path = db_info.one()
 
-        tables = {}
+        tables: dict[str, dict[str, object]] = {"expected_schema": {}, "public": {}}
         for table in ("users", "tickets", "alembic_version"):
-            regclass = await connection.execute(
+            expected_regclass = await connection.execute(
                 text("SELECT to_regclass(:table_name)"),
                 {"table_name": f"{schema}.{table}"},
             )
-            tables[table] = regclass.scalar()
+            public_regclass = await connection.execute(
+                text("SELECT to_regclass(:table_name)"),
+                {"table_name": f"public.{table}"},
+            )
+            tables["expected_schema"][table] = expected_regclass.scalar()
+            tables["public"][table] = public_regclass.scalar()
 
         current_revisions: list[str] = []
-        if tables["alembic_version"]:
+        if tables["expected_schema"]["alembic_version"]:
             revision_rows = await connection.execute(
-                text(f'SELECT version_num FROM "{schema}"."alembic_version"')
+                text(f'SELECT version_num FROM "{safe_schema}"."alembic_version"')
             )
             current_revisions = [row[0] for row in revision_rows.fetchall()]
 
@@ -99,10 +113,14 @@ def _format_diagnostics(diagnostics: dict[str, object]) -> str:
         f"  current_database: {diagnostics['current_database']}\n"
         f"  current_schema: {diagnostics['current_schema']}\n"
         f"  search_path: {diagnostics['search_path']}\n"
-        "  tables:\n"
-        f"    users: {'present' if tables['users'] else 'missing'}\n"
-        f"    tickets: {'present' if tables['tickets'] else 'missing'}\n"
-        f"    alembic_version: {'present' if tables['alembic_version'] else 'missing'}\n"
+        "  tables_in_expected_schema:\n"
+        f"    users: {'present' if tables['expected_schema']['users'] else 'missing'}\n"
+        f"    tickets: {'present' if tables['expected_schema']['tickets'] else 'missing'}\n"
+        f"    alembic_version: {'present' if tables['expected_schema']['alembic_version'] else 'missing'}\n"
+        "  tables_in_public:\n"
+        f"    users: {'present' if tables['public']['users'] else 'missing'}\n"
+        f"    tickets: {'present' if tables['public']['tickets'] else 'missing'}\n"
+        f"    alembic_version: {'present' if tables['public']['alembic_version'] else 'missing'}\n"
         "  alembic:\n"
         f"    head: {', '.join(expected_heads) if expected_heads else '<none>'}\n"
         f"    current: {', '.join(current_revisions) if current_revisions else '<none>'}\n"
@@ -121,14 +139,19 @@ def _validate_diagnostics(diagnostics: dict[str, object]) -> list[str]:
         errors.append("Current schema does not match DB_SCHEMA.")
 
     search_path = diagnostics["search_path"]
-    search_path_items = [item.strip() for item in str(search_path).split(",") if item.strip()]
+    search_path_items = [_normalize_search_path_item(item) for item in str(search_path).split(",") if item.strip()]
     if not search_path_items or search_path_items[0] != expected_schema:
         errors.append("search_path does not start with DB_SCHEMA.")
 
     tables = diagnostics["tables"]
     for table_name in ("users", "tickets", "alembic_version"):
-        if not tables[table_name]:
+        if not tables["expected_schema"][table_name]:
             errors.append(f"Required table {table_name} is missing.")
+
+    schema_missing = any(not tables["expected_schema"][table_name] for table_name in ("users", "tickets", "alembic_version"))
+    public_present = any(tables["public"][table_name] for table_name in ("users", "tickets", "alembic_version"))
+    if schema_missing and public_present:
+        errors.append("Tables exist in public but DB_SCHEMA points elsewhere (schema mismatch).")
 
     expected_heads = set(diagnostics["expected_heads"])
     current_revisions = set(diagnostics["current_revisions"])
@@ -153,7 +176,27 @@ async def bootstrap_database() -> None:
     logger.info(_format_diagnostics(diagnostics))
 
 
+async def report_database() -> None:
+    configure_logging()
+    diagnostics = await _fetch_diagnostics([])
+    logger.info(_format_diagnostics(diagnostics))
+
+
+def _parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Bootstrap database validation.")
+    parser.add_argument(
+        "--report",
+        action="store_true",
+        help="Print diagnostics without failing the process.",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = _parse_args()
+    if args.report:
+        asyncio.run(report_database())
+        return
     asyncio.run(bootstrap_database())
 
 

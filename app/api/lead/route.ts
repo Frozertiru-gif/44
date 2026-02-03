@@ -6,7 +6,8 @@ import { isValidPhone, normalizePhone } from "@/src/lib/phone";
 
 const WINDOW_MS = 10 * 60 * 1000;
 const MAX_REQUESTS = 5;
-const MESSAGE_LIMIT = 800;
+const MESSAGE_LIMIT = 3700;
+const TELEGRAM_TIMEOUT_MS = 4000;
 
 type LeadPayload = {
   name?: string;
@@ -53,96 +54,102 @@ const appendLead = async (lead: Record<string, string | null>) => {
   await fs.appendFile(filePath, `${JSON.stringify(lead)}\n`, "utf8");
 };
 
-const parseAdminIds = (value?: string | null) =>
-  (value ?? "")
-    .split(",")
-    .map((item) => Number(item.trim()))
-    .filter((id) => Number.isFinite(id) && id > 0);
+const escapeTelegram = (value: string, parseMode: string) => {
+  if (parseMode === "MarkdownV2") {
+    return value.replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, "\\$&");
+  }
 
-const buildTelegramMessage = (lead: {
-  ts: string;
-  name: string | null;
-  phone: string;
-  message: string | null;
-  source: string;
-  categoryId?: string | null;
-  categoryTitle?: string | null;
-  issueTitle?: string | null;
-}) => {
-  const context =
-    lead.categoryTitle && lead.issueTitle
-      ? `${lead.categoryTitle} → ${lead.issueTitle}`
-      : lead.categoryTitle
-      ? lead.categoryTitle
-      : lead.issueTitle
-      ? lead.issueTitle
-      : null;
+  if (parseMode === "HTML") {
+    return value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  return value;
+};
+
+const buildTelegramMessage = (
+  lead: {
+    external_id: string;
+    ts: string;
+    name: string | null;
+    phone: string;
+    message: string | null;
+    source: string;
+    categoryId?: string | null;
+    categoryTitle?: string | null;
+    issueTitle?: string | null;
+  },
+  parseMode: string
+) => {
+  const context = [lead.categoryTitle, lead.issueTitle].filter(Boolean).join(" / ") || null;
+  const safe = (value: string) => escapeTelegram(value, parseMode);
   const lines = [
-    "<b>Новая заявка</b>",
-    `Дата: ${lead.ts}`,
-    lead.name ? `Имя: ${lead.name}` : null,
-    `Телефон: ${lead.phone}`,
-    lead.message ? `Что сломалось: ${lead.message}` : null,
-    context ? `Контекст: ${context}` : null,
-    `Источник: ${lead.source}`
+    "📩 Новая заявка с сайта",
+    `ID: ${safe(lead.external_id)}`,
+    `Имя: ${safe(lead.name ?? "—")}`,
+    `Телефон: ${safe(lead.phone)}`,
+    `Сообщение: ${safe(lead.message ?? "—")}`,
+    `Источник: ${safe(lead.source)}`,
+    context ? `Категория/Проблема: ${safe(context)}` : null,
+    `Время: ${safe(lead.ts)}`
   ].filter(Boolean);
 
   return lines.join("\n").slice(0, MESSAGE_LIMIT);
 };
 
-const sendTelegramMessage = async (message: string) => {
+const sendToTelegramChat = async (lead: {
+  external_id: string;
+  ts: string;
+  name: string | null;
+  phone: string;
+  message: string | null;
+  source: string;
+  categoryTitle?: string | null;
+  issueTitle?: string | null;
+}) => {
   const token = process.env.LEADS_TG_BOT_TOKEN;
-  const adminIds = parseAdminIds(process.env.LEADS_TG_ADMIN_IDS);
+  const chatId = process.env.LEADS_TG_CHAT_ID;
   const parseMode = process.env.LEADS_TG_PARSE_MODE ?? "HTML";
 
-  if (!token || adminIds.length === 0) {
-    throw new Error("Telegram env not configured");
-  }
-
-  const url = `https://api.telegram.org/bot${token}/sendMessage`;
-  await Promise.all(
-    adminIds.map(async (chatId) => {
-      const response = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: parseMode })
-      });
-      if (!response.ok) {
-        const body = await response.text().catch(() => "unknown");
-        throw new Error(`Telegram send failed (${chatId}): ${response.status} ${body}`);
-      }
-    })
-  );
-};
-
-const WEBHOOK_TIMEOUT_MS = 4000;
-
-const sendLeadWebhook = async (lead: Record<string, string | null>) => {
-  const url = process.env.LEADS_WEBHOOK_URL;
-  const secret = process.env.LEADS_WEBHOOK_SECRET;
-
-  if (!url || !secret) {
-    throw new Error("Webhook env not configured");
+  if (!token || !chatId) {
+    console.info("[lead:tg] skipped (env not configured)");
+    return;
   }
 
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);
-
+  const timer = setTimeout(() => controller.abort(), TELEGRAM_TIMEOUT_MS);
+  const message = buildTelegramMessage(lead, parseMode);
+  const url = `https://api.telegram.org/bot${token}/sendMessage`;
   try {
     const response = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Webhook-Secret": secret
-      },
-      body: JSON.stringify(lead),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: parseMode }),
       signal: controller.signal
     });
-
+    const body = await response.text().catch(() => "unknown");
     if (!response.ok) {
-      const body = await response.text().catch(() => "unknown");
-      throw new Error(`Webhook failed: ${response.status} ${body}`);
+      console.error("[lead:tg] failed", { status: response.status, body });
+      return;
     }
+    let data: any = null;
+    if (body) {
+      try {
+        data = JSON.parse(body);
+      } catch {
+        data = null;
+      }
+    }
+    console.info("[lead:tg] ok", {
+      message_id: data?.result?.message_id ?? "unknown",
+      chat_id: data?.result?.chat?.id ?? chatId
+    });
+  } catch (error) {
+    console.error("[lead:tg] failed", error);
   } finally {
     clearTimeout(timer);
   }
@@ -184,28 +191,9 @@ export async function POST(req: Request) {
     await appendLead(lead);
     console.info("[lead]", lead);
 
-    let delivered = false;
-    try {
-      await sendLeadWebhook(lead);
-      delivered = true;
-      console.info("[lead:webhook] delivered", { external_id: lead.external_id });
-    } catch (error) {
-      console.error("[lead:webhook] failed", error);
-    }
+    await sendToTelegramChat(lead);
 
-    const fallbackEnabled = process.env.LEADS_TG_FALLBACK === "1";
-    if (!delivered && fallbackEnabled) {
-      try {
-        const message = buildTelegramMessage(lead);
-        await sendTelegramMessage(message);
-        delivered = true;
-        console.info("[lead:telegram] delivered", { external_id: lead.external_id });
-      } catch (error) {
-        console.error("[lead:telegram] failed", error);
-      }
-    }
-
-    return NextResponse.json({ ok: true, delivered });
+    return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("[lead:error]", error);
     return NextResponse.json({ ok: false, code: "server_error" }, { status: 400 });

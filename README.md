@@ -20,13 +20,10 @@ npm install
 cp .env.example .env
 ```
 
-Обязательные параметры для webhook-отправки заявок:
-- `LEADS_WEBHOOK_URL` — URL вебхука telegram_service (пример: `https://<domain>/webhook/lead`).
-- `LEADS_WEBHOOK_SECRET` — секрет для заголовка `X-Webhook-Secret`.
-
-Опциональный fallback для старого Telegram-уведомления (по умолчанию выключен):
-- `LEADS_TG_FALLBACK=1`
-- `LEADS_TG_BOT_TOKEN`, `LEADS_TG_ADMIN_IDS`, `LEADS_TG_PARSE_MODE` — параметры старого пути.
+Обязательные параметры для отправки лидов напрямую в Telegram-чат:
+- `LEADS_TG_BOT_TOKEN` — токен бота.
+- `LEADS_TG_CHAT_ID` — ID чата (группа/канал), например `-1001234567890`.
+- `LEADS_TG_PARSE_MODE` — режим разметки сообщений (по умолчанию `HTML`).
 
 ## Запуск (dev)
 ```bash
@@ -51,11 +48,13 @@ npm run leads:tail
 ## Хранение лидов
 Лиды сохраняются в `data/leads.jsonl` в формате JSONL и логируются в консоль (включая `external_id`).
 
-## Проверка отправки webhook
-1. Запустите telegram_service с настроенным `WEBHOOK_SECRET` и доступным портом вебхука.
-2. Укажите `LEADS_WEBHOOK_URL` и `LEADS_WEBHOOK_SECRET` на ленде.
-3. Отправьте тестовую заявку через форму на сайте.
-4. Пользователь всегда получит `ok:true`, а доставка/ошибки будут в логах сервиса.
+## Как получить `LEADS_TG_CHAT_ID`
+1. Добавьте бота в нужный чат (группа/канал).
+2. Отправьте любое сообщение в чат.
+3. Откройте в браузере:
+   `https://api.telegram.org/bot<TOKEN>/getUpdates`
+4. Найдите в JSON поле `message.chat.id` (для каналов/супергрупп обычно начинается с `-100...`).
+5. Укажите это значение в `LEADS_TG_CHAT_ID`.
 
 ## Деплой (быстрый вариант)
 **VPS/Render/Fly:**

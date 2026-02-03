@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from aiogram import Bot, Router
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandObject, CommandStart
 from aiogram.types import Message
 
 from app.bot.keyboards.main_menu import build_main_menu
@@ -16,14 +16,14 @@ ticket_service = TicketService()
 
 
 @router.message(CommandStart())
-async def start_handler(message: Message, bot: Bot) -> None:
+async def start_handler(message: Message, command: CommandObject, bot: Bot) -> None:
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
             session, message.from_user.id, message.from_user.full_name if message.from_user else None
         )
         await session.commit()
 
-    args = message.get_args()
+    args = (command.args or "").strip()
     if args and args.startswith("ticket_"):
         ticket_id = int(args.replace("ticket_", ""))
         async with async_session_factory() as session:

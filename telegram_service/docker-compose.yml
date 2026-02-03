@@ -21,11 +21,21 @@ services:
     env_file:
       - .env
     depends_on:
-      db:
-        condition: service_healthy
+      migrations:
+        condition: service_completed_successfully
     working_dir: /app
     entrypoint: ["/app/scripts/entrypoint.sh"]
     restart: unless-stopped
+  migrations:
+    build:
+      context: .
+    env_file:
+      - .env
+    working_dir: /app
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      db:
+        condition: service_healthy
 
 volumes:
   telegram_service_db:

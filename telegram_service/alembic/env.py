@@ -53,12 +53,9 @@ async def run_migrations_online() -> None:
     )
 
     async with connectable.connect() as connection:
-        schema_name = settings.db_schema or "public"
-        safe_schema = schema_name.replace('"', '""')
-
         def do_run_migrations(sync_conn) -> None:
-            sync_conn.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{safe_schema}"'))
-            sync_conn.execute(text(f'SET search_path TO "{safe_schema}", public'))
+            schema_name = settings.db_schema or "public"
+            safe_schema = schema_name.replace('"', '""')
             context.configure(
                 connection=sync_conn,
                 target_metadata=target_metadata,
@@ -67,16 +64,20 @@ async def run_migrations_online() -> None:
                 version_table_schema=settings.db_schema,
             )
             with context.begin_transaction():
+                if schema_name != "public":
+                    sync_conn.execute(
+                        text(f'CREATE SCHEMA IF NOT EXISTS "{safe_schema}"')
+                    )
                 context.run_migrations()
-            version_table = f"{schema_name}.alembic_version"
-            result = sync_conn.execute(
-                text("select to_regclass(:table_name)"),
-                {"table_name": version_table},
-            ).scalar()
-            if result is None:
-                raise RuntimeError(
-                    f"Migration failed: missing version table {version_table}."
-                )
+                version_table = f"{schema_name}.alembic_version"
+                result = sync_conn.execute(
+                    text("select to_regclass(:table_name)"),
+                    {"table_name": version_table},
+                ).scalar()
+                if result is None:
+                    raise RuntimeError(
+                        f"Migration failed: missing version table {version_table}."
+                    )
 
         await connection.run_sync(do_run_migrations)
 

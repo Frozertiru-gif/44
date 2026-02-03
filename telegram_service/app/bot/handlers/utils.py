@@ -3,11 +3,10 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Iterable
 
-from app.db.enums import AdSource, LeadAdSource, LeadStatus, TicketCategory, TicketStatus
+from app.db.enums import AdSource, LeadAdSource, LeadStatus, TicketStatus
 from app.db.models import Lead, Ticket
 
 
-CATEGORY_MAP = {item.value: item for item in TicketCategory}
 ADSOURCE_MAP = {item.value: item for item in AdSource}
 LEAD_STATUS_LABELS = {
     LeadStatus.NEW_RAW: "Новая",

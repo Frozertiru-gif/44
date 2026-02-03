@@ -10,7 +10,6 @@ from aiogram.types import CallbackQuery, Message
 from app.bot.handlers.permissions import CREATE_ROLES
 from app.bot.handlers.utils import (
     ADSOURCE_MAP,
-    CATEGORY_MAP,
     format_lead_card,
     format_ticket_card,
     format_ticket_preview,
@@ -35,6 +34,7 @@ from app.core.config import get_settings
 from app.db.enums import AdSource, LeadStatus
 from app.db.session import async_session_factory
 from app.services.audit_service import AuditService
+from app.services.category_normalizer import normalize_ticket_category
 from app.services.lead_service import LeadService
 from app.services.project_settings_service import ProjectSettingsService
 from app.services.ticket_service import TicketService
@@ -108,9 +108,9 @@ async def start_ticket_creation(message: Message, state: FSMContext) -> None:
 
 @router.message(TicketCreateStates.category)
 async def ticket_category(message: Message, state: FSMContext) -> None:
-    category = CATEGORY_MAP.get(message.text or "")
+    category = normalize_ticket_category(message.text or "")
     if not category:
-        await message.answer("Пожалуйста, выберите категорию кнопкой.")
+        await message.answer("Категория не распознана, выберите из списка.")
         return
     await state.update_data(category=category)
     data = await state.get_data()

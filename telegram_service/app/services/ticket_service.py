@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
@@ -11,12 +12,14 @@ from sqlalchemy.orm import selectinload
 from app.db.enums import AdSource, TicketCategory, TicketStatus, TransferStatus, UserRole
 from app.db.models import Ticket, User
 from app.services.audit_service import AuditService
+from app.services.category_normalizer import normalize_ticket_category
 
 
 class TicketService:
     def __init__(self) -> None:
         self._audit = AuditService()
         self._money_round = Decimal("0.01")
+        self._logger = logging.getLogger(__name__)
 
     async def search_by_phone(self, session: AsyncSession, phone: str, limit: int = 5) -> list[Ticket]:
         result = await session.execute(
@@ -28,7 +31,7 @@ class TicketService:
         self,
         session: AsyncSession,
         *,
-        category: TicketCategory,
+        category: TicketCategory | str,
         scheduled_at: datetime | None,
         client_name: str | None,
         client_age_estimate: int | None,
@@ -54,9 +57,13 @@ class TicketService:
                 reason="CREATE_TICKET",
             )
             return None
+        normalized_category = normalize_ticket_category(category)
+        if not normalized_category:
+            self._logger.warning("Ticket creation skipped due to unknown category: %s", category)
+            return None
         ticket = Ticket(
             status=TicketStatus.READY_FOR_WORK,
-            category=category,
+            category=normalized_category,
             scheduled_at=scheduled_at,
             client_name=client_name,
             client_age_estimate=client_age_estimate,

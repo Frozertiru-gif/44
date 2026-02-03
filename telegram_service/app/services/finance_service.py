@@ -52,10 +52,18 @@ class FinanceService:
         ).where(Ticket.status == TicketStatus.CLOSED, Ticket.assigned_executor_id == master_id)
         base = self._apply_range(base, Ticket.closed_at, date_range)
         result = await session.execute(base)
-        earned, net_profit, confirmed = result.one()
+        earned_executor, net_profit, confirmed = result.one()
+        admin_query = select(func.coalesce(func.sum(Ticket.admin_earned_amount), 0)).where(
+            Ticket.status == TicketStatus.CLOSED,
+            Ticket.created_by_admin_id == master_id,
+        )
+        admin_query = self._apply_range(admin_query, Ticket.closed_at, date_range)
+        admin_result = await session.execute(admin_query)
+        earned_admin = admin_result.scalar() or 0
+        earned = Decimal(earned_executor or 0) + Decimal(earned_admin or 0)
         pending = Decimal(net_profit) - Decimal(confirmed)
         return {
-            "earned": Decimal(earned or 0),
+            "earned": earned,
             "net_profit": Decimal(net_profit or 0),
             "confirmed": Decimal(confirmed or 0),
             "pending": pending if pending > 0 else Decimal("0.00"),

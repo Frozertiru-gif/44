@@ -81,10 +81,29 @@ const whatsapp = process.env.NEXT_PUBLIC_WHATSAPP ?? "https://wa.me/79000000000"
 const telegram = process.env.NEXT_PUBLIC_TELEGRAM ?? "https://t.me/username";
 const maxUrl = process.env.NEXT_PUBLIC_MAX_URL ?? "";
 const masterPhotoUrl = process.env.NEXT_PUBLIC_MASTER_PHOTO_URL ?? "";
-const city = process.env.NEXT_PUBLIC_CITY ?? "Москва";
+const city = process.env.NEXT_PUBLIC_CITY ?? "Нижний Тагил";
 const areasRaw = process.env.NEXT_PUBLIC_AREAS ?? "Центр,Север,Юг";
 const areas = areasRaw.split(",").map((area) => area.trim()).filter(Boolean);
 const workHours = process.env.NEXT_PUBLIC_WORK_HOURS ?? "Ежедневно 9:00–21:00";
+
+export const serviceAreaLocalities = [
+  "Нижний Тагил",
+  "Невьянск",
+  "Кировград",
+  "Верхняя Салда",
+  "Нижняя Салда",
+  "Покровское",
+  "Свободный",
+  "Горноуральский",
+  "Николо-Павловское",
+  "Новоасбест",
+  "Петрокаменское",
+  "Первомайский",
+  "Краснополье",
+  "Черноисточинск",
+  "Уралец",
+  "Висим"
+];
 
 export const siteContent: SiteContent = {
   brand: {
@@ -110,7 +129,7 @@ export const siteContent: SiteContent = {
   areas,
   workHours,
   serviceArea: {
-    title: "Работаю по всем районам города и пригородам"
+    title: "Работаю по Нижнему Тагилу и пригородам"
   },
   hero: {
     title: "Ремонт техники на дому",

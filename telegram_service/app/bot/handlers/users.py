@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from decimal import Decimal, InvalidOperation
 
 from aiogram import F, Router
@@ -18,6 +19,7 @@ from app.services.user_service import UserService
 router = Router()
 user_service = UserService()
 audit_service = AuditService()
+logger = logging.getLogger(__name__)
 
 
 @router.message(F.text == "👥 Пользователи")
@@ -85,8 +87,16 @@ async def user_set_role(callback: CallbackQuery) -> None:
             await callback.answer("Пользователь не найден", show_alert=True)
             return
 
+        old_role = target.role
         role = UserRole(role_value)
         await user_service.set_role(session, target, role)
+        logger.info(
+            "User role change requested: target_user_id=%s target_tg_user_id=%s old_role=%s new_role=%s",
+            target.id,
+            target.id,
+            old_role.value,
+            role.value,
+        )
         await audit_service.log_audit_event(
             session,
             actor_id=actor.id,
@@ -96,6 +106,12 @@ async def user_set_role(callback: CallbackQuery) -> None:
             payload={"role": role.value},
         )
         await session.commit()
+        logger.info(
+            "User role change committed: target_user_id=%s target_tg_user_id=%s new_role=%s",
+            target.id,
+            target.id,
+            role.value,
+        )
 
     await callback.answer("Роль обновлена")
 

@@ -19,7 +19,10 @@ ticket_service = TicketService()
 async def start_handler(message: Message, command: CommandObject, bot: Bot) -> None:
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            log_diagnostics=True,
         )
         await session.commit()
 

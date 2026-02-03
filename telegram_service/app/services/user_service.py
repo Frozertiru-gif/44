@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 
 from sqlalchemy import select
@@ -9,26 +10,61 @@ from app.core.config import get_settings
 from app.db.enums import UserRole
 from app.db.models import User
 
+logger = logging.getLogger(__name__)
+
+ROLE_PRIORITY = {
+    UserRole.JUNIOR_ADMIN: 0,
+    UserRole.JUNIOR_MASTER: 1,
+    UserRole.MASTER: 2,
+    UserRole.ADMIN: 3,
+    UserRole.SYS_ADMIN: 4,
+    UserRole.SUPER_ADMIN: 5,
+}
+
 
 class UserService:
     def __init__(self) -> None:
         self.settings = get_settings()
 
-    async def ensure_user(self, session: AsyncSession, tg_user_id: int, display_name: str | None) -> User:
+    async def ensure_user(
+        self,
+        session: AsyncSession,
+        tg_user_id: int,
+        display_name: str | None,
+        log_diagnostics: bool = False,
+    ) -> User:
         result = await session.execute(select(User).where(User.id == tg_user_id))
         user = result.scalar_one_or_none()
         required_role: UserRole | None = None
+        reason: str | None = None
         if self.settings.super_admin is not None and tg_user_id == self.settings.super_admin:
             required_role = UserRole.SUPER_ADMIN
+            reason = "super_admin_env"
         elif tg_user_id in self.settings.sys_admin_id_set():
             required_role = UserRole.SYS_ADMIN
+            reason = "sys_admin_env"
         if user:
             user.display_name = display_name
-            if required_role == UserRole.SUPER_ADMIN and user.role != UserRole.SUPER_ADMIN:
-                user.role = UserRole.SUPER_ADMIN
-            elif required_role == UserRole.SYS_ADMIN and user.role not in {UserRole.SYS_ADMIN, UserRole.SUPER_ADMIN}:
-                user.role = UserRole.SYS_ADMIN
+            if required_role and ROLE_PRIORITY[required_role] > ROLE_PRIORITY[user.role]:
+                old_role = user.role
+                user.role = required_role
+                logger.info(
+                    "User role promoted via env: tg_user_id=%s db_user_id=%s old_role=%s new_role=%s reason=%s",
+                    tg_user_id,
+                    user.id,
+                    old_role.value,
+                    user.role.value,
+                    reason,
+                )
             await session.flush()
+            if log_diagnostics:
+                logger.info(
+                    "Ensure user diagnostics: tg_user_id=%s db_user_id=%s role=%s display_name=%s",
+                    tg_user_id,
+                    user.id,
+                    user.role.value,
+                    user.display_name,
+                )
             return user
 
         role = required_role or UserRole.JUNIOR_ADMIN
@@ -36,6 +72,14 @@ class UserService:
         user = User(id=tg_user_id, role=role, display_name=display_name, is_active=True)
         session.add(user)
         await session.flush()
+        if log_diagnostics:
+            logger.info(
+                "Ensure user diagnostics: tg_user_id=%s db_user_id=%s role=%s display_name=%s",
+                tg_user_id,
+                user.id,
+                user.role.value,
+                user.display_name,
+            )
         return user
 
     async def list_users(self, session: AsyncSession, limit: int = 20) -> list[User]:

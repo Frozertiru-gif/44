@@ -57,16 +57,31 @@ async def run_migrations_online() -> None:
         safe_schema = schema_name.replace('"', '""')
         await connection.execute(text(f'CREATE SCHEMA IF NOT EXISTS "{safe_schema}"'))
         await connection.execute(text(f'SET search_path TO "{safe_schema}", public'))
-        await connection.run_sync(
-            lambda sync_conn: context.configure(
+
+        def do_run_migrations(sync_conn) -> None:
+            context.configure(
                 connection=sync_conn,
                 target_metadata=target_metadata,
                 compare_type=True,
                 transaction_per_migration=True,
                 version_table_schema=settings.db_schema,
             )
-        )
-        await connection.run_sync(lambda sync_conn: context.run_migrations())
+            with context.begin_transaction():
+                context.run_migrations()
+
+        def verify_version_table(sync_conn) -> None:
+            version_table = f"{schema_name}.alembic_version"
+            result = sync_conn.execute(
+                text("select to_regclass(:table_name)"),
+                {"table_name": version_table},
+            ).scalar()
+            if result is None:
+                raise RuntimeError(
+                    f"Migration failed: missing version table {version_table}."
+                )
+
+        await connection.run_sync(do_run_migrations)
+        await connection.run_sync(verify_version_table)
 
     await connectable.dispose()
 

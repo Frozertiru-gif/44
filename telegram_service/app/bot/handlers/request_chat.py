@@ -7,9 +7,9 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.types import CallbackQuery
 
-from app.bot.handlers.permissions import CANCEL_ROLES, CREATE_ROLES
+from app.bot.handlers.permissions import CANCEL_ROLES, MASTER_ROLES, CREATE_ROLES
 from app.bot.handlers.utils import format_lead_card, format_ticket_card
-from app.bot.keyboards.request_chat import lead_request_keyboard
+from app.bot.keyboards.request_chat import lead_request_keyboard, request_chat_keyboard
 from app.bot.keyboards.ticket_wizard import category_keyboard
 from app.bot.states.ticket_create import TicketCreateStates
 from app.db.enums import LeadStatus
@@ -69,6 +69,44 @@ async def cancel_from_request_chat(callback: CallbackQuery) -> None:
 
     await callback.message.edit_text(format_ticket_card(ticket))
     await callback.answer("Заказ отменен")
+
+
+@router.callback_query(F.data.startswith("request_take:"))
+async def request_take(callback: CallbackQuery, bot: Bot) -> None:
+    ticket_id = int(callback.data.split(":", 1)[1])
+
+    async with async_session_factory() as session:
+        user = await user_service.ensure_user(
+            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+        )
+        if not user.is_active or user.role not in MASTER_ROLES:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=user.id,
+                action="PERMISSION_DENIED",
+                entity_type="ticket",
+                entity_id=ticket_id,
+                payload={"reason": "TAKE_TICKET"},
+                ticket_id=ticket_id,
+            )
+            await session.commit()
+            await callback.answer("Нет доступа", show_alert=True)
+            return
+
+        async with session.begin():
+            ticket = await ticket_service.take_ticket(session, ticket_id, user.id)
+
+        if not ticket:
+            await callback.answer("Заказ уже принят или недоступен.", show_alert=True)
+            return
+
+        bot_info = await bot.get_me()
+
+    await callback.message.edit_text(
+        format_ticket_card(ticket),
+        reply_markup=request_chat_keyboard(ticket, bot_info.username),
+    )
+    await callback.answer("Заказ принят")
 
 
 @router.callback_query(F.data.startswith("edit:"))

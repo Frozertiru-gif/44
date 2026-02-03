@@ -14,6 +14,7 @@ class UserRole(str, Enum):
 
 class TicketStatus(str, Enum):
     READY_FOR_WORK = "READY_FOR_WORK"
+    IN_WORK = "IN_WORK"
     TAKEN = "TAKEN"
     IN_PROGRESS = "IN_PROGRESS"
     WAITING = "WAITING"

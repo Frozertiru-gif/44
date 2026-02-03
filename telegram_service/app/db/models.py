@@ -6,7 +6,7 @@ from decimal import Decimal
 
 from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Index, JSON, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 
 from app.db.base import Base
 from app.db.enums import AdSource, LeadAdSource, LeadStatus, ProjectTransactionType, TicketCategory, TicketStatus, TransferStatus, UserRole
@@ -52,6 +52,7 @@ class Ticket(Base):
 
     assigned_executor_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
     assigned_executor = relationship("User", foreign_keys=[assigned_executor_id])
+    assigned_worker_id: Mapped[int | None] = synonym("assigned_executor_id")
     taken_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     revenue: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)

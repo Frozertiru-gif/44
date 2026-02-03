@@ -33,7 +33,7 @@ async def junior_master_tickets(message: Message) -> None:
             await message.answer("У вас нет активной привязки к мастеру.")
             return
 
-        statuses = [TicketStatus.TAKEN, TicketStatus.IN_PROGRESS, TicketStatus.CLOSED]
+        statuses = [TicketStatus.IN_WORK, TicketStatus.TAKEN, TicketStatus.IN_PROGRESS, TicketStatus.CLOSED]
         tickets = await ticket_service.list_for_master(session, link.master_id, statuses=statuses)
 
     if not tickets:

@@ -102,7 +102,7 @@ async def queue_take(callback: CallbackQuery, bot: Bot) -> None:
                 payload={"reason": "TAKE_TICKET"},
                 ticket_id=ticket_id,
             )
-            await callback.answer("Нет доступа", show_alert=True)
+            await callback.answer(f"Нет доступа. Ваша роль: {user.role.value}", show_alert=True)
             await session.commit()
             return
 
@@ -213,7 +213,7 @@ async def status_in_progress(callback: CallbackQuery, bot: Bot) -> None:
                 payload={"reason": "SET_IN_PROGRESS"},
                 ticket_id=ticket_id,
             )
-            await callback.answer("Нет доступа", show_alert=True)
+            await callback.answer(f"Нет доступа. Ваша роль: {user.role.value}", show_alert=True)
             await session.commit()
             return
 
@@ -252,7 +252,7 @@ async def close_start(callback: CallbackQuery, state: FSMContext) -> None:
                 ticket_id=ticket_id,
             )
             await session.commit()
-            await callback.answer("Нет доступа", show_alert=True)
+            await callback.answer(f"Нет доступа. Ваша роль: {user.role.value}", show_alert=True)
             return
 
         ticket = await ticket_service.get_ticket(session, ticket_id)
@@ -424,7 +424,7 @@ async def close_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
                 payload={"reason": "CLOSE_TICKET"},
                 ticket_id=ticket_id,
             )
-            await callback.answer("Нет доступа", show_alert=True)
+            await callback.answer(f"Нет доступа. Ваша роль: {user.role.value}", show_alert=True)
             await session.commit()
             await state.clear()
             return
@@ -476,7 +476,7 @@ async def transfer_sent(callback: CallbackQuery, bot: Bot) -> None:
                 payload={"reason": "TRANSFER_SENT"},
                 ticket_id=ticket_id,
             )
-            await callback.answer("Нет доступа", show_alert=True)
+            await callback.answer(f"Нет доступа. Ваша роль: {user.role.value}", show_alert=True)
             await session.commit()
             return
 
@@ -564,7 +564,7 @@ async def transfer_confirm(callback: CallbackQuery, bot: Bot) -> None:
                 payload={"reason": "TRANSFER_CONFIRM"},
                 ticket_id=ticket_id,
             )
-            await callback.answer("Нет доступа", show_alert=True)
+            await callback.answer(f"Нет доступа. Ваша роль: {user.role.value}", show_alert=True)
             await session.commit()
             return
 
@@ -607,7 +607,7 @@ async def transfer_reject(callback: CallbackQuery, bot: Bot) -> None:
                 payload={"reason": "TRANSFER_REJECT"},
                 ticket_id=ticket_id,
             )
-            await callback.answer("Нет доступа", show_alert=True)
+            await callback.answer(f"Нет доступа. Ваша роль: {user.role.value}", show_alert=True)
             await session.commit()
             return
 

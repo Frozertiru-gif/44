@@ -61,7 +61,7 @@ async def list_tickets_filtered(callback: CallbackQuery) -> None:
                 payload={"reason": "LIST_TICKETS"},
             )
             await session.commit()
-            await callback.answer("Нет доступа", show_alert=True)
+            await callback.answer(f"Нет доступа. Ваша роль: {user.role.value}", show_alert=True)
             return
 
         tickets = await ticket_service.list_for_actor(session, user, filter_key=filter_key)

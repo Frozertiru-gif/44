@@ -312,7 +312,7 @@ async def transaction_date(message: Message, state: FSMContext) -> None:
             session, message.from_user.id, message.from_user.full_name if message.from_user else None
         )
         if not user.is_active or user.role not in MANUAL_TX_ROLES:
-            await message.answer("Нет доступа.")
+            await message.answer(f"Нет доступа. Ваша роль: {user.role.value}")
             await session.commit()
             await state.clear()
             return
@@ -386,7 +386,7 @@ async def transaction_confirm(callback: CallbackQuery, state: FSMContext) -> Non
                 entity_id=None,
                 payload={"reason": f"TX_{transaction_type.value}"},
             )
-            await callback.answer("Нет доступа", show_alert=True)
+            await callback.answer(f"Нет доступа. Ваша роль: {user.role.value}", show_alert=True)
             await session.commit()
             await state.clear()
             return
@@ -506,7 +506,7 @@ async def share_confirm(callback: CallbackQuery, state: FSMContext) -> None:
                 entity_id=None,
                 payload={"reason": "PROJECT_SHARE_SET"},
             )
-            await callback.answer("Нет доступа", show_alert=True)
+            await callback.answer(f"Нет доступа. Ваша роль: {actor.role.value}", show_alert=True)
             await session.commit()
             await state.clear()
             return
@@ -555,7 +555,7 @@ async def _handle_flow(
                     payload={"reason": "MASTER_MONEY"},
                 )
                 await session.commit()
-                await message.answer("Нет доступа.")
+                await message.answer(f"Нет доступа. Ваша роль: {user.role.value}")
                 return
             summary = await finance_service.master_money(session, user.id, date_range=date_range)
             await message.answer(
@@ -579,7 +579,7 @@ async def _handle_flow(
                     payload={"reason": "SALARY_VIEW"},
                 )
                 await session.commit()
-                await message.answer("Нет доступа.")
+                await message.answer(f"Нет доступа. Ваша роль: {user.role.value}")
                 return
             if user.role == UserRole.ADMIN or user.role in FINANCE_SUMMARY_ROLES:
                 amount = await finance_service.admin_salary(session, user.id, date_range=date_range)
@@ -595,7 +595,7 @@ async def _handle_flow(
                     payload={"reason": "SALARY_VIEW"},
                 )
                 await session.commit()
-                await message.answer("Нет доступа.")
+                await message.answer(f"Нет доступа. Ваша роль: {user.role.value}")
                 return
             await message.answer(f"💵 Моя зарплата\nПериод: {label}\nСумма: {amount}")
             return
@@ -611,7 +611,7 @@ async def _handle_flow(
                     payload={"reason": "FINANCE_SUMMARY"},
                 )
                 await session.commit()
-                await message.answer("Нет доступа.")
+                await message.answer(f"Нет доступа. Ваша роль: {user.role.value}")
                 return
             summary = await finance_service.project_summary(session, date_range=date_range)
             await message.answer(
@@ -644,7 +644,7 @@ async def _handle_flow(
                     payload={"reason": "FINANCE_EXPORT"},
                 )
                 await session.commit()
-                await message.answer("Нет доступа.")
+                await message.answer(f"Нет доступа. Ваша роль: {user.role.value}")
                 return
             tickets = await finance_service.list_tickets_for_export(session, date_range=date_range)
             transactions = await finance_service.list_manual_transactions(session, date_range=date_range)

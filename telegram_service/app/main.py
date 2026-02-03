@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from aiogram import Bot, Dispatcher
 
@@ -8,9 +9,14 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging
 
 
+logger = logging.getLogger(__name__)
+
+
 async def main() -> None:
     configure_logging()
     settings = get_settings()
+    logger.info("SYS_ADMIN_IDS: %s", sorted(settings.sys_admin_id_set()))
+    logger.info("SUPER_ADMIN: %s", [settings.super_admin] if settings.super_admin is not None else [])
     bot = Bot(settings.bot_token)
     dispatcher = Dispatcher()
 

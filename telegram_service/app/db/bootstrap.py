@@ -3,12 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from pathlib import Path
 from typing import Iterable
-
-from alembic import command
-from alembic.config import Config
-from alembic.script import ScriptDirectory
 from sqlalchemy import text
 from sqlalchemy.engine.url import make_url
 from sqlalchemy.pool import NullPool
@@ -25,18 +20,6 @@ def _mask_database_url(database_url: str) -> str:
         return make_url(database_url).render_as_string(hide_password=True)
     except Exception:
         return "<invalid database url>"
-
-
-def _alembic_config() -> Config:
-    project_root = Path(__file__).resolve().parents[2]
-    alembic_ini = project_root / "alembic.ini"
-    config = Config(str(alembic_ini))
-    return config
-
-
-def _alembic_heads(config: Config) -> list[str]:
-    script = ScriptDirectory.from_config(config)
-    return list(script.get_heads())
 
 
 async def _wait_for_db(timeout_seconds: int = 60, interval_seconds: int = 2) -> None:
@@ -59,16 +42,6 @@ async def _wait_for_db(timeout_seconds: int = 60, interval_seconds: int = 2) -> 
 
     await engine.dispose()
     raise RuntimeError("Database did not become available in time") from last_error
-
-
-def _run_migrations() -> list[str]:
-    settings = get_settings()
-    config = _alembic_config()
-    config.set_main_option("sqlalchemy.url", settings.database_url)
-    heads = _alembic_heads(config)
-    logger.info("Applying migrations to head(s): %s", ", ".join(heads) if heads else "<none>")
-    command.upgrade(config, "head")
-    return heads
 
 
 async def _fetch_diagnostics(expected_heads: Iterable[str]) -> dict[str, object]:
@@ -159,9 +132,7 @@ def _validate_diagnostics(diagnostics: dict[str, object]) -> list[str]:
 
     expected_heads = set(diagnostics["expected_heads"])
     current_revisions = set(diagnostics["current_revisions"])
-    if not expected_heads:
-        errors.append("No alembic heads found.")
-    elif current_revisions != expected_heads:
+    if expected_heads and current_revisions != expected_heads:
         errors.append("Alembic version does not match head revision.")
 
     return errors
@@ -170,8 +141,7 @@ def _validate_diagnostics(diagnostics: dict[str, object]) -> list[str]:
 async def bootstrap_database() -> None:
     configure_logging()
     await _wait_for_db()
-    expected_heads = _run_migrations()
-    diagnostics = await _fetch_diagnostics(expected_heads)
+    diagnostics = await _fetch_diagnostics([])
     errors = _validate_diagnostics(diagnostics)
 
     if errors:

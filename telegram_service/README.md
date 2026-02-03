@@ -30,6 +30,12 @@ cd telegram_service
 docker compose up -d --build
 ```
 
+## Как запускается БД и миграции
+
+- `db` стартует первым и проходит healthcheck.
+- `migrations` запускает `alembic upgrade head` один раз и завершается с кодом 0.
+- `bot` стартует только после успешного завершения `migrations`.
+
 ## Логи бота
 
 ```bash

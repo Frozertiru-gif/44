@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { siteContent, serviceAreaLocalities } from "@/src/content/site";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -25,8 +26,27 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const localBusinessSchema = {
+    "@context": "https://schema.org",
+    "@type": "LocalBusiness",
+    name: `${siteContent.brand.name} — ${siteContent.brand.tag}`,
+    telephone: siteContent.phone.tel,
+    address: {
+      "@type": "PostalAddress",
+      addressLocality: siteContent.city,
+      addressCountry: "RU"
+    },
+    areaServed: serviceAreaLocalities
+  };
+
   return (
     <html lang="ru">
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessSchema) }}
+        />
+      </head>
       <body>
         {children}
         <div id="modal-root" />

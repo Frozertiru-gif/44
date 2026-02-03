@@ -20,10 +20,13 @@ npm install
 cp .env.example .env
 ```
 
-Обязательные параметры для отправки заявок в Telegram:
-- `LEADS_TG_BOT_TOKEN` — токен Telegram-бота.
-- `LEADS_TG_ADMIN_IDS` — список Telegram user_id админов через запятую.
-- `LEADS_TG_PARSE_MODE` — режим форматирования (по умолчанию `HTML`).
+Обязательные параметры для webhook-отправки заявок:
+- `LEADS_WEBHOOK_URL` — URL вебхука telegram_service (пример: `https://<domain>/webhook/lead`).
+- `LEADS_WEBHOOK_SECRET` — секрет для заголовка `X-Webhook-Secret`.
+
+Опциональный fallback для старого Telegram-уведомления (по умолчанию выключен):
+- `LEADS_TG_FALLBACK=1`
+- `LEADS_TG_BOT_TOKEN`, `LEADS_TG_ADMIN_IDS`, `LEADS_TG_PARSE_MODE` — параметры старого пути.
 
 ## Запуск (dev)
 ```bash
@@ -46,13 +49,13 @@ npm run leads:tail
 ```
 
 ## Хранение лидов
-Лиды сохраняются в `data/leads.jsonl` в формате JSONL и логируются в консоль.
+Лиды сохраняются в `data/leads.jsonl` в формате JSONL и логируются в консоль (включая `external_id`).
 
-## Проверка отправки в Telegram
-1. Создайте бота через BotFather и получите токен.
-2. Укажите `LEADS_TG_BOT_TOKEN` и `LEADS_TG_ADMIN_IDS` (user_id админов).
+## Проверка отправки webhook
+1. Запустите telegram_service с настроенным `WEBHOOK_SECRET` и доступным портом вебхука.
+2. Укажите `LEADS_WEBHOOK_URL` и `LEADS_WEBHOOK_SECRET` на ленде.
 3. Отправьте тестовую заявку через форму на сайте.
-4. Если отправка в Telegram не удалась, API вернёт `500` и покажет сообщение пользователю.
+4. Пользователь всегда получит `ok:true`, а доставка/ошибки будут в логах сервиса.
 
 ## Деплой (быстрый вариант)
 **VPS/Render/Fly:**

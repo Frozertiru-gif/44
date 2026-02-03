@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { promises as fs } from "fs";
 import path from "path";
+import { randomUUID } from "crypto";
 import { isValidPhone, normalizePhone } from "@/src/lib/phone";
 
 const WINDOW_MS = 10 * 60 * 1000;
@@ -114,6 +115,39 @@ const sendTelegramMessage = async (message: string) => {
   );
 };
 
+const WEBHOOK_TIMEOUT_MS = 4000;
+
+const sendLeadWebhook = async (lead: Record<string, string | null>) => {
+  const url = process.env.LEADS_WEBHOOK_URL;
+  const secret = process.env.LEADS_WEBHOOK_SECRET;
+
+  if (!url || !secret) {
+    throw new Error("Webhook env not configured");
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), WEBHOOK_TIMEOUT_MS);
+
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Webhook-Secret": secret
+      },
+      body: JSON.stringify(lead),
+      signal: controller.signal
+    });
+
+    if (!response.ok) {
+      const body = await response.text().catch(() => "unknown");
+      throw new Error(`Webhook failed: ${response.status} ${body}`);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+};
+
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
@@ -134,6 +168,7 @@ export async function POST(req: Request) {
     }
 
     const lead = {
+      external_id: randomUUID(),
       ts: new Date().toISOString(),
       ip,
       ua: req.headers.get("user-agent") ?? "unknown",
@@ -149,18 +184,28 @@ export async function POST(req: Request) {
     await appendLead(lead);
     console.info("[lead]", lead);
 
+    let delivered = false;
     try {
-      const message = buildTelegramMessage(lead);
-      await sendTelegramMessage(message);
+      await sendLeadWebhook(lead);
+      delivered = true;
+      console.info("[lead:webhook] delivered", { external_id: lead.external_id });
     } catch (error) {
-      console.error("[lead:telegram]", error);
-      return NextResponse.json(
-        { ok: false, code: "telegram_failed" },
-        { status: 500 }
-      );
+      console.error("[lead:webhook] failed", error);
     }
 
-    return NextResponse.json({ ok: true });
+    const fallbackEnabled = process.env.LEADS_TG_FALLBACK === "1";
+    if (!delivered && fallbackEnabled) {
+      try {
+        const message = buildTelegramMessage(lead);
+        await sendTelegramMessage(message);
+        delivered = true;
+        console.info("[lead:telegram] delivered", { external_id: lead.external_id });
+      } catch (error) {
+        console.error("[lead:telegram] failed", error);
+      }
+    }
+
+    return NextResponse.json({ ok: true, delivered });
   } catch (error) {
     console.error("[lead:error]", error);
     return NextResponse.json({ ok: false, code: "server_error" }, { status: 400 });

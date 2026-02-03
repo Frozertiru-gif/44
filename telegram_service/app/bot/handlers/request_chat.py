@@ -90,7 +90,7 @@ async def request_take(callback: CallbackQuery, bot: Bot) -> None:
                 ticket_id=ticket_id,
             )
             await session.commit()
-            await callback.answer("Нет доступа", show_alert=True)
+            await callback.answer(f"Нет доступа. Ваша роль: {user.role.value}", show_alert=True)
             return
 
         ticket = await ticket_service.take_ticket(session, ticket_id, user.id)

@@ -17,16 +17,21 @@ class UserService:
     async def ensure_user(self, session: AsyncSession, tg_user_id: int, display_name: str | None) -> User:
         result = await session.execute(select(User).where(User.id == tg_user_id))
         user = result.scalar_one_or_none()
+        required_role: UserRole | None = None
+        if self.settings.super_admin is not None and tg_user_id == self.settings.super_admin:
+            required_role = UserRole.SUPER_ADMIN
+        elif tg_user_id in self.settings.sys_admin_id_set():
+            required_role = UserRole.SYS_ADMIN
         if user:
             user.display_name = display_name
+            if required_role == UserRole.SUPER_ADMIN and user.role != UserRole.SUPER_ADMIN:
+                user.role = UserRole.SUPER_ADMIN
+            elif required_role == UserRole.SYS_ADMIN and user.role not in {UserRole.SYS_ADMIN, UserRole.SUPER_ADMIN}:
+                user.role = UserRole.SYS_ADMIN
             await session.flush()
             return user
 
-        role = UserRole.JUNIOR_ADMIN
-        if self.settings.super_admin is not None and tg_user_id == self.settings.super_admin:
-            role = UserRole.SUPER_ADMIN
-        elif tg_user_id in self.settings.sys_admin_id_set():
-            role = UserRole.SYS_ADMIN
+        role = required_role or UserRole.JUNIOR_ADMIN
 
         user = User(id=tg_user_id, role=role, display_name=display_name, is_active=True)
         session.add(user)

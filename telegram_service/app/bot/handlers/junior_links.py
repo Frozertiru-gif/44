@@ -42,7 +42,10 @@ async def junior_links_menu(message: Message, state: FSMContext) -> None:
     await state.clear()
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None
         )
         await session.commit()
 
@@ -88,7 +91,10 @@ async def link_master_card(callback: CallbackQuery) -> None:
 
     async with async_session_factory() as session:
         actor = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         if not actor.is_active:
             await callback.answer("Нет прав", show_alert=True)
@@ -121,7 +127,10 @@ async def link_master_card(callback: CallbackQuery) -> None:
 async def link_back(callback: CallbackQuery) -> None:
     async with async_session_factory() as session:
         actor = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         if not actor.is_active or actor.role not in JUNIOR_LINK_ADMIN_ROLES:
             await audit_service.log_audit_event(
@@ -147,7 +156,10 @@ async def link_add(callback: CallbackQuery, state: FSMContext) -> None:
 
     async with async_session_factory() as session:
         actor = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         if not actor.is_active or actor.role not in JUNIOR_LINK_ADMIN_ROLES:
             await audit_service.log_audit_event(
@@ -202,7 +214,10 @@ async def link_relink(callback: CallbackQuery, state: FSMContext) -> None:
     link_id = int(callback.data.split(":", 1)[1])
     async with async_session_factory() as session:
         actor = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         if not actor.is_active or actor.role not in JUNIOR_LINK_ADMIN_ROLES:
             await audit_service.log_audit_event(
@@ -279,7 +294,10 @@ async def link_confirm(callback: CallbackQuery, state: FSMContext) -> None:
 
     async with async_session_factory() as session:
         actor = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         if not actor.is_active:
             await audit_service.log_audit_event(

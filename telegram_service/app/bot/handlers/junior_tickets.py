@@ -21,7 +21,10 @@ junior_link_service = JuniorLinkService()
 async def junior_master_tickets(message: Message) -> None:
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None
         )
         await session.commit()
         if not user.is_active or user.role != UserRole.JUNIOR_MASTER:
@@ -49,7 +52,10 @@ async def junior_master_ticket_card(callback: CallbackQuery) -> None:
     ticket_id = int(callback.data.split(":", 1)[1])
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         if not user.is_active or user.role != UserRole.JUNIOR_MASTER:
             await callback.answer("Нет прав", show_alert=True)

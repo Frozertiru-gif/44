@@ -3,17 +3,29 @@ from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from app.db.enums import UserRole
 
 
-def user_list_keyboard(user_ids: list[int]) -> InlineKeyboardMarkup:
+def user_list_keyboard(users: list[tuple[int, str | None]]) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=f"Пользователь {user_id}", callback_data=f"user:{user_id}")]
-            for user_id in user_ids
+            [
+                InlineKeyboardButton(
+                    text=_format_user_label(user_id, username),
+                    callback_data=f"user:{user_id}",
+                )
+            ]
+            for user_id, username in users
         ]
     )
 
 
+def _format_user_label(user_id: int, username: str | None) -> str:
+    if username:
+        return f"Пользователь {user_id} (@{username})"
+    return f"Пользователь {user_id}"
+
+
 def user_role_keyboard(user_id: int) -> InlineKeyboardMarkup:
     roles = [
+        UserRole.USER,
         UserRole.ADMIN,
         UserRole.JUNIOR_ADMIN,
         UserRole.MASTER,

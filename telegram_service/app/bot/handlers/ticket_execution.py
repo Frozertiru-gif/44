@@ -57,7 +57,10 @@ def parse_amount(value: str) -> Decimal | None:
 async def queue_list(message: Message) -> None:
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None
         )
         await session.commit()
         if not user.is_active or user.role not in MASTER_ROLES:
@@ -90,7 +93,10 @@ async def queue_take(callback: CallbackQuery, bot: Bot) -> None:
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         if not user.is_active or user.role not in MASTER_ROLES:
             await audit_service.log_audit_event(
@@ -125,7 +131,10 @@ async def queue_take(callback: CallbackQuery, bot: Bot) -> None:
 async def my_active(message: Message) -> None:
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None
         )
         await session.commit()
         if not user.is_active or user.role not in MASTER_ROLES:
@@ -164,7 +173,10 @@ async def my_active(message: Message) -> None:
 async def my_closed(message: Message) -> None:
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None
         )
         await session.commit()
         if not user.is_active or user.role not in MASTER_ROLES:
@@ -201,7 +213,10 @@ async def status_in_progress(callback: CallbackQuery, bot: Bot) -> None:
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         if not user.is_active or user.role not in MASTER_ROLES:
             await audit_service.log_audit_event(
@@ -238,7 +253,10 @@ async def close_start(callback: CallbackQuery, state: FSMContext) -> None:
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         await session.commit()
         if not user.is_active or user.role not in MASTER_ROLES:
@@ -412,7 +430,10 @@ async def close_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         if not user.is_active or user.role not in MASTER_ROLES:
             await audit_service.log_audit_event(
@@ -464,7 +485,10 @@ async def transfer_sent(callback: CallbackQuery, bot: Bot) -> None:
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         if not user.is_active or user.role not in MASTER_ROLES:
             await audit_service.log_audit_event(
@@ -499,7 +523,10 @@ async def transfer_sent(callback: CallbackQuery, bot: Bot) -> None:
 async def transfer_confirmations(message: Message) -> None:
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None
         )
         await session.commit()
         if not user.is_active or user.role not in TRANSFER_CONFIRM_ROLES:
@@ -552,7 +579,10 @@ async def transfer_confirm(callback: CallbackQuery, bot: Bot) -> None:
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         if not user.is_active or user.role not in TRANSFER_CONFIRM_ROLES:
             await audit_service.log_audit_event(
@@ -595,7 +625,10 @@ async def transfer_reject(callback: CallbackQuery, bot: Bot) -> None:
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None
         )
         if not user.is_active or user.role not in TRANSFER_CONFIRM_ROLES:
             await audit_service.log_audit_event(

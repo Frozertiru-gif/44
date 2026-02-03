@@ -26,7 +26,10 @@ logger = logging.getLogger(__name__)
 async def users_list(message: Message) -> None:
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None,
         )
         if not user.is_active or user.role not in USER_ADMIN_ROLES:
             await message.answer("У вас нет прав для управления пользователями.")
@@ -34,8 +37,8 @@ async def users_list(message: Message) -> None:
 
         users = await user_service.list_users(session)
 
-    user_ids = [item.id for item in users]
-    await message.answer("Пользователи:", reply_markup=user_list_keyboard(user_ids))
+    user_entries = [(item.id, item.username) for item in users]
+    await message.answer("Пользователи:", reply_markup=user_list_keyboard(user_entries))
 
 
 @router.callback_query(F.data.startswith("user:"))
@@ -44,7 +47,10 @@ async def user_card(callback: CallbackQuery) -> None:
 
     async with async_session_factory() as session:
         actor = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None,
         )
         if not actor.is_active or actor.role not in USER_ADMIN_ROLES:
             await callback.answer("Нет прав", show_alert=True)
@@ -57,8 +63,9 @@ async def user_card(callback: CallbackQuery) -> None:
         return
     master_percent = f"{target.master_percent:.2f}" if target.master_percent is not None else "-"
     admin_percent = f"{target.admin_percent:.2f}" if target.admin_percent is not None else "-"
+    username_label = f" (@{target.username})" if target.username else ""
     await callback.message.answer(
-        f"Пользователь {target.id}\n"
+        f"Пользователь {target.id}{username_label}\n"
         f"Имя: {target.display_name or '-'}\n"
         f"Роль: {target.role.value}\n"
         f"Статус: {'активен' if target.is_active else 'выключен'}\n"
@@ -76,7 +83,10 @@ async def user_set_role(callback: CallbackQuery) -> None:
 
     async with async_session_factory() as session:
         actor = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None,
         )
         if not actor.is_active or actor.role not in USER_ADMIN_ROLES:
             await callback.answer("Нет прав", show_alert=True)
@@ -122,7 +132,10 @@ async def user_disable(callback: CallbackQuery) -> None:
 
     async with async_session_factory() as session:
         actor = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None,
         )
         if not actor.is_active or actor.role not in USER_ADMIN_ROLES:
             await callback.answer("Нет прав", show_alert=True)
@@ -153,7 +166,10 @@ async def user_enable(callback: CallbackQuery) -> None:
 
     async with async_session_factory() as session:
         actor = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None,
         )
         if not actor.is_active or actor.role not in USER_ADMIN_ROLES:
             await callback.answer("Нет прав", show_alert=True)
@@ -185,7 +201,10 @@ async def user_percent_start(callback: CallbackQuery, state: FSMContext) -> None
 
     async with async_session_factory() as session:
         actor = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None,
         )
         if not actor.is_active or actor.role not in USER_ADMIN_ROLES:
             await callback.answer("Нет прав", show_alert=True)
@@ -241,7 +260,10 @@ async def user_percent_confirm(callback: CallbackQuery, state: FSMContext) -> No
 
     async with async_session_factory() as session:
         actor = await user_service.ensure_user(
-            session, callback.from_user.id, callback.from_user.full_name if callback.from_user else None
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None,
         )
         if not actor.is_active or actor.role not in USER_ADMIN_ROLES:
             await audit_service.log_audit_event(

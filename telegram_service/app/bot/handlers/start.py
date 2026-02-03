@@ -2,11 +2,12 @@ from __future__ import annotations
 
 from aiogram import Bot, Router
 from aiogram.filters import CommandObject, CommandStart
-from aiogram.types import Message
+from aiogram.types import Message, ReplyKeyboardRemove
 
 from app.bot.keyboards.main_menu import build_main_menu
 from app.bot.handlers.utils import format_ticket_card
 from app.db.session import async_session_factory
+from app.db.enums import UserRole
 from app.services.ticket_service import TicketService
 from app.services.user_service import UserService
 
@@ -22,6 +23,7 @@ async def start_handler(message: Message, command: CommandObject, bot: Bot) -> N
             session,
             message.from_user.id,
             message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None,
             log_diagnostics=True,
         )
         await session.commit()
@@ -31,7 +33,10 @@ async def start_handler(message: Message, command: CommandObject, bot: Bot) -> N
         ticket_id = int(args.replace("ticket_", ""))
         async with async_session_factory() as session:
             user = await user_service.ensure_user(
-                session, message.from_user.id, message.from_user.full_name if message.from_user else None
+                session,
+                message.from_user.id,
+                message.from_user.full_name if message.from_user else None,
+                message.from_user.username if message.from_user else None,
             )
             ticket = await ticket_service.get_ticket_for_actor(session, ticket_id, user)
         if ticket:
@@ -42,6 +47,10 @@ async def start_handler(message: Message, command: CommandObject, bot: Bot) -> N
 
     if not user.is_active:
         await message.answer("У вас нет доступа. Обратитесь к администратору.")
+        return
+    if user.role == UserRole.USER:
+        await message.answer("Добро пожаловать!")
+        await message.answer("Нет доступа. Ожидайте подтверждения администратора.", reply_markup=ReplyKeyboardRemove())
         return
 
     menu = await build_main_menu(user.role)

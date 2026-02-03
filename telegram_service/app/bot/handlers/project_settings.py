@@ -50,7 +50,10 @@ async def project_settings_menu(message: Message, state: FSMContext) -> None:
     await state.clear()
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None,
         )
         await session.commit()
         if not user.is_active or user.role not in {UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN}:
@@ -136,7 +139,10 @@ async def project_settings_value(message: Message, state: FSMContext) -> None:
 
     async with async_session_factory() as session:
         actor = await user_service.ensure_user(
-            session, message.from_user.id, message.from_user.full_name if message.from_user else None
+            session,
+            message.from_user.id,
+            message.from_user.full_name if message.from_user else None,
+            message.from_user.username if message.from_user else None,
         )
         if not actor.is_active or actor.role not in {UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN}:
             await audit_service.log_audit_event(

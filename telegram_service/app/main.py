@@ -1,6 +1,7 @@
 import asyncio
 import logging
 
+import uvicorn
 from aiogram import Bot, Dispatcher
 
 from app.bot.handlers import finance, help as help_handler
@@ -35,7 +36,31 @@ async def main() -> None:
     dispatcher.include_router(project_settings.router)
     dispatcher.include_router(help_handler.router)
 
-    await dispatcher.start_polling(bot)
+    config = uvicorn.Config(
+        "app.webhook.app:app",
+        host="0.0.0.0",
+        port=settings.webhook_port,
+        log_level="info",
+        loop="asyncio",
+    )
+    server = uvicorn.Server(config)
+
+    polling_task = asyncio.create_task(dispatcher.start_polling(bot))
+    server_task = asyncio.create_task(server.serve())
+
+    try:
+        done, pending = await asyncio.wait(
+            {polling_task, server_task},
+            return_when=asyncio.FIRST_EXCEPTION,
+        )
+        for task in done:
+            if task.exception():
+                raise task.exception()
+    finally:
+        server.should_exit = True
+        polling_task.cancel()
+        await asyncio.gather(polling_task, server_task, return_exceptions=True)
+        await bot.session.close()
 
 
 if __name__ == "__main__":

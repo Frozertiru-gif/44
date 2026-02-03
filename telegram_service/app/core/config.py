@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     finance_export_chat_id: int | None = None
 
     webhook_secret: str | None = None
+    webhook_port: int = Field(default=8000, validation_alias=AliasChoices("WEBHOOK_PORT", "webhook_port"))
     public_base_url: str | None = None
 
     def sys_admin_id_set(self) -> Set[int]:

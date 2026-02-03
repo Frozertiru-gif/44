@@ -24,6 +24,7 @@
 - `REQUESTS_CHAT_ID`
 - `EVENTS_CHAT_ID`
 - `SUPER_ADMIN` или `SYS_ADMIN_IDS` (минимум одно значение)
+- `WEBHOOK_SECRET` (секрет для входящих лидов)
 
 Пример корректных значений:
 
@@ -102,6 +103,15 @@ docker compose run --rm migrations
 - Запускайте бота только через Docker Compose.
 - Не запускайте параллельно `python -m app.main` на хосте вместе с контейнером, иначе возможен TelegramConflictError.
 
+## Вебхук лидов
+
+Схема: `site → webhook → telegram_service → DM admins-with-permission`.
+
+- Входящая точка: `POST /webhook/lead`
+- Секрет: заголовок `X-Webhook-Secret` должен совпадать с `WEBHOOK_SECRET`.
+- По умолчанию сервис слушает `WEBHOOK_PORT=8000` и пробрасывает порт наружу в Compose.
+- Уведомления отправляются в личные сообщения только админам с правами создания/редактирования заявок.
+
 ## Основные команды бота
 
 - `/start` — регистрация/обновление профиля и главное меню.
@@ -113,3 +123,4 @@ docker compose run --rm migrations
 
 - Все ID/секреты берутся из `.env`.
 - Бот публикует новые заказы в `REQUESTS_CHAT_ID`.
+- Лиды из вебхука не отправляются в общий чат, только в ЛС админов с правами.

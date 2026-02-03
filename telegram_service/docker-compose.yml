@@ -25,6 +25,8 @@ services:
         condition: service_completed_successfully
     working_dir: /app
     entrypoint: ["/app/scripts/entrypoint.sh"]
+    ports:
+      - "${WEBHOOK_PORT:-8000}:${WEBHOOK_PORT:-8000}"
     restart: unless-stopped
   migrations:
     build:

@@ -22,6 +22,7 @@
 - `DATABASE_URL`
 - `DB_SCHEMA` (опционально, по умолчанию `public`)
 - `REQUESTS_CHAT_ID`
+- `EVENTS_CHAT_ID`
 - `SUPER_ADMIN` или `SYS_ADMIN_IDS` (минимум одно значение)
 
 Пример корректных значений:

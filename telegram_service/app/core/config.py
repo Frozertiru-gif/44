@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     database_url: str
     db_schema: str = Field(default="public", validation_alias=AliasChoices("DB_SCHEMA", "db_schema"))
     requests_chat_id: int
+    events_chat_id: int = Field(validation_alias=AliasChoices("EVENTS_CHAT_ID", "AUDIT_CHAT_ID", "events_chat_id"))
     super_admin: int | None = Field(default=None, validation_alias=AliasChoices("SUPER_ADMIN", "super_admin"))
     sys_admin_ids: str = ""
     finance_export_chat_id: int | None = None

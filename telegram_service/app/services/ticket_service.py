@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import datetime
-import logging
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
@@ -12,14 +11,13 @@ from sqlalchemy.orm import selectinload
 from app.db.enums import AdSource, TicketCategory, TicketStatus, TransferStatus, UserRole
 from app.db.models import Ticket, User
 from app.services.audit_service import AuditService
-from app.services.category_normalizer import normalize_ticket_category
+from app.domain.enums_mapping import parse_ad_source, parse_ticket_category
 
 
 class TicketService:
     def __init__(self) -> None:
         self._audit = AuditService()
         self._money_round = Decimal("0.01")
-        self._logger = logging.getLogger(__name__)
 
     async def search_by_phone(self, session: AsyncSession, phone: str, limit: int = 5) -> list[Ticket]:
         result = await session.execute(
@@ -31,14 +29,14 @@ class TicketService:
         self,
         session: AsyncSession,
         *,
-        category: TicketCategory | str,
+        category: TicketCategory | str | None,
         scheduled_at: datetime | None,
         client_name: str | None,
         client_age_estimate: int | None,
         client_phone: str,
         problem_text: str,
         special_note: str | None,
-        ad_source: AdSource,
+        ad_source: AdSource | str | None,
         created_by_admin_id: int,
         is_repeat: bool = False,
         repeat_ticket_ids: list[int] | None = None,
@@ -57,10 +55,8 @@ class TicketService:
                 reason="CREATE_TICKET",
             )
             return None
-        normalized_category = normalize_ticket_category(category)
-        if not normalized_category:
-            self._logger.warning("Ticket creation skipped due to unknown category: %s", category)
-            return None
+        normalized_category = parse_ticket_category(category)
+        normalized_ad_source = parse_ad_source(ad_source)
         ticket = Ticket(
             status=TicketStatus.READY_FOR_WORK,
             category=normalized_category,
@@ -70,7 +66,7 @@ class TicketService:
             client_phone=client_phone,
             problem_text=problem_text,
             special_note=special_note,
-            ad_source=ad_source,
+            ad_source=normalized_ad_source,
             is_repeat=is_repeat,
             repeat_ticket_ids=repeat_ticket_ids,
             created_by_admin_id=created_by_admin_id,

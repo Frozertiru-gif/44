@@ -3,11 +3,11 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Iterable
 
-from app.db.enums import AdSource, LeadAdSource, LeadStatus, TicketStatus, ticket_category_label
+from app.db.enums import LeadAdSource, LeadStatus, TicketStatus, ticket_category_label
+from app.domain.enums_mapping import ad_source_label
 from app.db.models import Lead, Ticket
 
 
-ADSOURCE_MAP = {item.value: item for item in AdSource}
 LEAD_STATUS_LABELS = {
     LeadStatus.NEW_RAW: "Новая",
     LeadStatus.NEED_INFO: "Нужно уточнить",
@@ -56,7 +56,7 @@ def format_ticket_card(ticket: Ticket) -> str:
         age = ticket.client_age_estimate if ticket.client_age_estimate is not None else "?"
         client_line = f"{name} ({age})"
     note = ticket.special_note or "-"
-    ad = ticket.ad_source.value if ticket.ad_source else "-"
+    ad = ad_source_label(ticket.ad_source)
     executor = format_executor_label(ticket)
     junior_master = format_junior_master_label(ticket)
     transfer = format_transfer_label(ticket)
@@ -89,7 +89,7 @@ def format_ticket_preview(data: dict) -> str:
         client_line = f"{name} ({age})"
     note = data.get("special_note") or "-"
     ad_source = data.get("ad_source")
-    ad_value = ad_source.value if ad_source else "-"
+    ad_value = ad_source_label(ad_source)
     repeat_ids = data.get("repeat_ticket_ids") or []
     repeat_info = f"\nПовторы: {', '.join(map(str, repeat_ids))}" if repeat_ids else ""
     return (
@@ -193,7 +193,7 @@ def format_order_report(ticket: Ticket) -> str:
     executor_obj = ticket.__dict__.get("assigned_executor")
     executor = executor_obj.display_name if executor_obj else None
     executor_label = executor or (f"ID {ticket.assigned_executor_id}" if ticket.assigned_executor_id else "-")
-    ad_source = ticket.ad_source.value if ticket.ad_source else "-"
+    ad_source = ad_source_label(ticket.ad_source)
     revenue = ticket.revenue if ticket.revenue is not None else "-"
     expense = ticket.expense if ticket.expense is not None else "-"
     profit = ticket.net_profit if ticket.net_profit is not None else "-"

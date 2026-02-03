@@ -9,7 +9,6 @@ from aiogram.types import CallbackQuery, Message
 
 from app.bot.handlers.permissions import CREATE_ROLES
 from app.bot.handlers.utils import (
-    ADSOURCE_MAP,
     format_lead_card,
     format_ticket_card,
     format_ticket_preview,
@@ -34,7 +33,7 @@ from app.core.config import get_settings
 from app.db.enums import AdSource, LeadStatus
 from app.db.session import async_session_factory
 from app.services.audit_service import AuditService
-from app.services.category_normalizer import normalize_ticket_category
+from app.domain.enums_mapping import parse_ad_source, parse_ticket_category
 from app.services.lead_service import LeadService
 from app.services.project_settings_service import ProjectSettingsService
 from app.services.ticket_service import TicketService
@@ -108,10 +107,7 @@ async def start_ticket_creation(message: Message, state: FSMContext) -> None:
 
 @router.message(TicketCreateStates.category)
 async def ticket_category(message: Message, state: FSMContext) -> None:
-    category = normalize_ticket_category(message.text or "")
-    if not category:
-        await message.answer("Категория не распознана, выберите из списка.")
-        return
+    category = parse_ticket_category(message.text or "")
     await state.update_data(category=category)
     data = await state.get_data()
     if data.get("client_phone"):
@@ -270,11 +266,7 @@ async def ticket_special_note_custom(message: Message, state: FSMContext) -> Non
 
 @router.message(TicketCreateStates.ad_source)
 async def ticket_ad_source(message: Message, state: FSMContext) -> None:
-    source = ADSOURCE_MAP.get(message.text or "")
-    if not source:
-        await message.answer("Выберите источник кнопкой.")
-        return
-
+    source = parse_ad_source(message.text or "")
     await state.update_data(ad_source=source)
     await state.set_state(TicketCreateStates.confirm)
     data = await state.get_data()

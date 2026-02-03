@@ -117,9 +117,9 @@ class LeadService:
         if ad_source == LeadAdSource.AVITO:
             return AdSource.AVITO
         if ad_source == LeadAdSource.FLYER:
-            return AdSource.FLYER
+            return AdSource.LEAFLET
         if ad_source == LeadAdSource.BUSINESS_CARD:
-            return AdSource.CARD
+            return AdSource.BUSINESS_CARD
         if ad_source == LeadAdSource.OTHER:
             return AdSource.OTHER
         return AdSource.UNKNOWN

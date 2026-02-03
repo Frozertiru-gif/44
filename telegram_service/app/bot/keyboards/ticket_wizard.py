@@ -27,7 +27,7 @@ async def repeat_warning_keyboard() -> InlineKeyboardMarkup:
 
 async def schedule_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="Сегодня"), KeyboardButton(text="Завтра"), KeyboardButton(text="Пропустить")]],
+        keyboard=[[KeyboardButton(text="Сегодня"), KeyboardButton(text="Завтра")]],
         resize_keyboard=True,
     )
 

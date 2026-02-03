@@ -54,6 +54,18 @@ docker compose down
 docker compose down -v
 ```
 
+После ресета БД поднимите стек заново, чтобы baseline-миграция создала схему:
+
+```bash
+docker compose up -d --build
+```
+
+При необходимости можно вручную накатить миграции в чистую БД:
+
+```bash
+docker compose run --rm migrations
+```
+
 ## Важно про запуск polling
 
 - Запускайте бота только через Docker Compose.

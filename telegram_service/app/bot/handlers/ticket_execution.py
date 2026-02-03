@@ -106,14 +106,15 @@ async def queue_take(callback: CallbackQuery, bot: Bot) -> None:
             await session.commit()
             return
 
-        async with session.begin():
-            ticket = await ticket_service.take_ticket(session, ticket_id, user.id)
+        ticket = await ticket_service.take_ticket(session, ticket_id, user.id)
 
         if not ticket:
+            await session.rollback()
             await callback.answer("Заказ уже принят или недоступен.", show_alert=True)
             return
 
         requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
+        await session.commit()
 
     await callback.message.edit_text(format_ticket_card(ticket))
     await bot.send_message(requests_chat_id, format_ticket_card(ticket))
@@ -216,14 +217,15 @@ async def status_in_progress(callback: CallbackQuery, bot: Bot) -> None:
             await session.commit()
             return
 
-        async with session.begin():
-            ticket = await ticket_service.set_in_progress(session, ticket_id, user.id)
+        ticket = await ticket_service.set_in_progress(session, ticket_id, user.id)
 
         if not ticket:
+            await session.rollback()
             await callback.answer("Нельзя сменить статус: заказ должен быть принят.", show_alert=True)
             return
 
         requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
+        await session.commit()
 
     await callback.message.edit_text(format_ticket_card(ticket))
     await bot.send_message(requests_chat_id, format_ticket_card(ticket))
@@ -427,24 +429,25 @@ async def close_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
             await state.clear()
             return
 
-        async with session.begin():
-            ticket = await ticket_service.close_ticket(
-                session,
-                ticket_id,
-                user.id,
-                revenue=revenue,
-                expense=expense,
-                junior_master_id=junior_master_id,
-                junior_master_percent=junior_master_percent,
-                allow_override=user.role in {UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN},
-            )
+        ticket = await ticket_service.close_ticket(
+            session,
+            ticket_id,
+            user.id,
+            revenue=revenue,
+            expense=expense,
+            junior_master_id=junior_master_id,
+            junior_master_percent=junior_master_percent,
+            allow_override=user.role in {UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN},
+        )
 
         if not ticket:
+            await session.rollback()
             await callback.answer("Нельзя закрыть заказ в текущем статусе.", show_alert=True)
             await state.clear()
             return
 
         requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
+        await session.commit()
 
     await state.clear()
     await callback.message.answer("Заказ закрыт.")
@@ -477,14 +480,15 @@ async def transfer_sent(callback: CallbackQuery, bot: Bot) -> None:
             await session.commit()
             return
 
-        async with session.begin():
-            ticket = await ticket_service.mark_transfer_sent(session, ticket_id, user.id)
+        ticket = await ticket_service.mark_transfer_sent(session, ticket_id, user.id)
 
         if not ticket:
+            await session.rollback()
             await callback.answer("Нельзя отметить перевод: заказ не закрыт или перевод уже отмечен.", show_alert=True)
             return
 
         requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
+        await session.commit()
 
     await callback.message.edit_text(format_ticket_card(ticket))
     await bot.send_message(requests_chat_id, format_ticket_card(ticket))
@@ -564,14 +568,15 @@ async def transfer_confirm(callback: CallbackQuery, bot: Bot) -> None:
             await session.commit()
             return
 
-        async with session.begin():
-            ticket = await ticket_service.confirm_transfer(session, ticket_id, user.id, approved=True)
+        ticket = await ticket_service.confirm_transfer(session, ticket_id, user.id, approved=True)
 
         if not ticket:
+            await session.rollback()
             await callback.answer("Нельзя подтвердить перевод", show_alert=True)
             return
 
         requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
+        await session.commit()
 
     await callback.message.edit_text(format_ticket_card(ticket))
     await bot.send_message(requests_chat_id, format_ticket_card(ticket))
@@ -606,14 +611,15 @@ async def transfer_reject(callback: CallbackQuery, bot: Bot) -> None:
             await session.commit()
             return
 
-        async with session.begin():
-            ticket = await ticket_service.confirm_transfer(session, ticket_id, user.id, approved=False)
+        ticket = await ticket_service.confirm_transfer(session, ticket_id, user.id, approved=False)
 
         if not ticket:
+            await session.rollback()
             await callback.answer("Нельзя отклонить перевод", show_alert=True)
             return
 
         requests_chat_id = await project_settings_service.get_requests_chat_id(session, settings.requests_chat_id)
+        await session.commit()
 
     await callback.message.edit_text(format_ticket_card(ticket))
     await bot.send_message(requests_chat_id, format_ticket_card(ticket))

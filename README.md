@@ -85,16 +85,16 @@ npm run start
 ### Подготовка конфигурации
 Скопируйте пример файла переменных и заполните пароль шифрования:
 ```bash
-cp scripts/backup.env.example scripts/backup.env
+cp /opt/master_stack/app/telegram_service/scripts/backup.env.example /opt/master_stack/app/telegram_service/scripts/backup.env
 ```
 
 ### Ручной запуск бэкапа
 ```bash
-set -a; source scripts/backup.env; set +a; ./scripts/backup_db.sh
+set -a; source /opt/master_stack/app/telegram_service/scripts/backup.env; set +a; /opt/master_stack/app/telegram_service/scripts/backup_db.sh
 ```
 
 ### Cron (пример)
-Запускайте из корня репозитория, чтобы относительные пути работали корректно:
+Запускайте с абсолютными путями:
 ```cron
-15 3 * * * cd /opt/master_stack/app && set -a && . scripts/backup.env && set +a && ./scripts/backup_db.sh >> /var/log/backup_db.log 2>&1
+15 3 * * * set -a && . /opt/master_stack/app/telegram_service/scripts/backup.env && set +a && /opt/master_stack/app/telegram_service/scripts/backup_db.sh >> /var/log/backup_db.log 2>&1
 ```

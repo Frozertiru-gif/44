@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+source "$SCRIPT_DIR/backup.env"
+
 DB_CONTAINER="${DB_CONTAINER:-telegram_service-db-1}"
 DB_NAME="${DB_NAME:-telegram_service}"
 DB_USER="${DB_USER:-telegram}"
-BACKUP_DIR="${BACKUP_DIR:-./backups}"
+BACKUP_DIR="${BACKUP_DIR:-/opt/master_stack/app/telegram_service/backups}"
 RETENTION_KEEP="${RETENTION_KEEP:-14}"
 BACKUP_PASSPHRASE="${BACKUP_PASSPHRASE:-}"
 

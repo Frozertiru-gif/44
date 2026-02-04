@@ -20,15 +20,15 @@ class Settings(BaseSettings):
     finance_export_chat_id: int | None = None
     backup_chat_id: int | None = Field(default=None, validation_alias=AliasChoices("BACKUP_CHAT_ID", "backup_chat_id"))
     backup_dir: str = Field(
-        default="/opt/backups/telegram_service",
+        default="/opt/master_stack/app/telegram_service/backups",
         validation_alias=AliasChoices("BACKUP_DIR", "backup_dir"),
     )
     backup_script_path: str = Field(
-        default="/opt/master_stack/app/scripts/backup_db.sh",
+        default="/opt/master_stack/app/telegram_service/scripts/backup_db.sh",
         validation_alias=AliasChoices("BACKUP_SCRIPT_PATH", "backup_script_path"),
     )
     backup_env_path: str = Field(
-        default="/opt/master_stack/app/scripts/backup.env",
+        default="/opt/master_stack/app/telegram_service/scripts/backup.env",
         validation_alias=AliasChoices("BACKUP_ENV_PATH", "backup_env_path"),
     )
     db_container: str | None = Field(default=None, validation_alias=AliasChoices("DB_CONTAINER", "db_container"))

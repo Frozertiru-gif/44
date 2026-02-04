@@ -190,8 +190,45 @@ class BackupService:
         except FileNotFoundError as exc:
             raise BackupError(f"{command[0]} не найден.") from exc
         except subprocess.CalledProcessError as exc:
+            self._append_log(log_file, f"Command failed with exit code {exc.returncode}\n")
             raise BackupError(error_message) from exc
+        self._append_log(log_file, f"Command exit code: {result.returncode}\n")
         return result
+
+    def _needs_timeout_sanitize(self, path: Path) -> bool:
+        with path.open("r", encoding="utf-8", errors="ignore") as source:
+            for line in source:
+                if line.lstrip().lower().startswith("set transaction_timeout"):
+                    return True
+        return False
+
+    def _sanitize_restore_sql(self, path: Path, log_file: Any) -> Path:
+        fd, temp_name = tempfile.mkstemp(suffix=".sql")
+        os.close(fd)
+        sanitized_path = Path(temp_name)
+        replacements = 0
+        with path.open("r", encoding="utf-8", errors="ignore") as source, sanitized_path.open(
+            "w", encoding="utf-8"
+        ) as dest:
+            for line in source:
+                if line.lstrip().lower().startswith("set transaction_timeout"):
+                    replacements += 1
+                    dest.write("SET statement_timeout = 0;\n")
+                    dest.write("SET lock_timeout = 0;\n")
+                    dest.write("SET idle_in_transaction_session_timeout = 0;\n")
+                    continue
+                dest.write(line)
+        self._append_log(log_file, f"Replaced transaction_timeout directives: {replacements}\n")
+        return sanitized_path
+
+    def append_restore_outcome(self, message: str) -> None:
+        restore_log = DEFAULT_RESTORE_LOG
+        restore_log.parent.mkdir(parents=True, exist_ok=True)
+        with restore_log.open("ab") as log_file:
+            self._append_log(
+                log_file,
+                f"\n--- restore outcome {datetime.now(tz=timezone.utc).isoformat()} ---\n{message}\n",
+            )
 
     def _load_metadata(self) -> dict[str, Any] | None:
         if not self._metadata_path.exists():
@@ -404,6 +441,8 @@ class BackupService:
             restore_log.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(delete=False, suffix=".dump") as temp_file:
                 plain_path = Path(temp_file.name)
+            restore_sql_path: Path | None = None
+            sanitized_path: Path | None = None
 
             try:
                 with restore_log.open("ab") as log_file:
@@ -438,6 +477,7 @@ class BackupService:
                         log_file.write(stdout)
                     if stderr:
                         log_file.write(stderr)
+                    self._append_log(log_file, f"gpg exit code: {gpg_proc.returncode}\n")
                     if gpg_proc.returncode != 0:
                         error_text = (stderr or b"").decode("utf-8", errors="ignore").lower()
                         if "bad session key" in error_text or "decryption failed" in error_text:
@@ -458,33 +498,37 @@ class BackupService:
                         "AND pid <> pg_backend_pid();"
                     )
                     self._append_log(log_file, "\n-- terminate connections\n")
+                    terminate_command = [
+                        "psql",
+                        "-h",
+                        db_host,
+                        "-p",
+                        db_port,
+                        "-U",
+                        db_user,
+                        "-d",
+                        maintenance_db,
+                        "-t",
+                        "-A",
+                        "-c",
+                        terminate_query,
+                    ]
+                    self._append_log(log_file, f"$ {' '.join(terminate_command)}\n")
                     try:
                         terminate_proc = await asyncio.to_thread(
                             subprocess.run,
-                            [
-                                "psql",
-                                "-h",
-                                db_host,
-                                "-p",
-                                db_port,
-                                "-U",
-                                db_user,
-                                "-d",
-                                maintenance_db,
-                                "-t",
-                                "-A",
-                                "-c",
-                                terminate_query,
-                            ],
+                            terminate_command,
                             stdout=subprocess.PIPE,
                             stderr=log_file,
                             env=env,
                             check=True,
                         )
                     except subprocess.CalledProcessError as exc:
+                        self._append_log(log_file, f"psql terminate exit code: {exc.returncode}\n")
                         raise BackupError(
                             "Не удалось завершить активные подключения к БД. Проверьте доступ."
                         ) from exc
+                    self._append_log(log_file, f"psql terminate exit code: {terminate_proc.returncode}\n")
                     if terminate_proc.stdout:
                         log_file.write(terminate_proc.stdout)
                     terminated = 0
@@ -495,6 +539,8 @@ class BackupService:
 
                     if is_custom:
                         self._require_binary("pg_restore", "postgresql-client")
+                        with tempfile.NamedTemporaryFile(delete=False, suffix=".sql") as sql_file:
+                            restore_sql_path = Path(sql_file.name)
                         await self._run_logged_command(
                             [
                                 "pg_restore",
@@ -502,41 +548,48 @@ class BackupService:
                                 "--if-exists",
                                 "--no-owner",
                                 "--no-privileges",
-                                "-h",
-                                db_host,
-                                "-p",
-                                db_port,
-                                "-U",
-                                db_user,
-                                "-d",
-                                db_name,
+                                "-f",
+                                str(restore_sql_path),
                                 str(plain_path),
                             ],
                             log_file,
                             env,
                             "Ошибка восстановления базы данных (pg_restore). Подробности в логах.",
                         )
+                        restore_source = restore_sql_path
                     else:
-                        await self._run_logged_command(
-                            [
-                                "psql",
-                                "-h",
-                                db_host,
-                                "-p",
-                                db_port,
-                                "-U",
-                                db_user,
-                                "-d",
-                                db_name,
-                                "--set",
-                                "ON_ERROR_STOP=1",
-                                "-f",
-                                str(plain_path),
-                            ],
-                            log_file,
-                            env,
-                            "Ошибка восстановления базы данных (psql). Подробности в логах.",
-                        )
+                        restore_source = plain_path
+
+                    if self._needs_timeout_sanitize(restore_source):
+                        self._append_log(log_file, "Replacing transaction_timeout in restore SQL\n")
+                        sanitized_path = self._sanitize_restore_sql(restore_source, log_file)
+                        restore_source = sanitized_path
+
+                    await self._run_logged_command(
+                        [
+                            "psql",
+                            "-h",
+                            db_host,
+                            "-p",
+                            db_port,
+                            "-U",
+                            db_user,
+                            "-d",
+                            db_name,
+                            "--set",
+                            "ON_ERROR_STOP=1",
+                            "-f",
+                            str(restore_source),
+                        ],
+                        log_file,
+                        env,
+                        "Ошибка восстановления базы данных (psql). Подробности в логах.",
+                    )
+                    self._append_log(log_file, "Restore finished successfully\n")
             finally:
                 if plain_path.exists():
                     plain_path.unlink()
+                if restore_sql_path and restore_sql_path.exists():
+                    restore_sql_path.unlink()
+                if sanitized_path and sanitized_path.exists():
+                    sanitized_path.unlink()

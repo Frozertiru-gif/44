@@ -283,15 +283,21 @@ async def backup_restore_confirm(callback: CallbackQuery) -> None:
         payload = {"error": str(exc)}
     except Exception as exc:  # noqa: BLE001
         logger.exception("Unexpected restore error")
-        text = "Неожиданная ошибка восстановления."
+        text = "Неожиданная ошибка восстановления. Подробности в логах."
         action = "BACKUP_RESTORE_FAILED"
-        payload = {"error": str(exc)}
+        payload = {"error": "UNEXPECTED"}
 
     if actor_id is not None:
         logger.info(
             "Backup restore finished",
             extra={"actor_id": actor_id, "action": action, "payload": payload},
         )
+    try:
+        backup_service.append_restore_outcome(
+            f"actor_id={actor_id} action={action} payload={payload}"
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to write restore outcome log")
     await callback.message.answer(text)
 
 
@@ -398,14 +404,20 @@ async def backup_restore_file_confirm(callback: CallbackQuery, state: FSMContext
         payload = {"error": str(exc)}
     except Exception as exc:  # noqa: BLE001
         logger.exception("Unexpected restore error")
-        text = "Неожиданная ошибка восстановления."
+        text = "Неожиданная ошибка восстановления. Подробности в логах."
         action = "BACKUP_RESTORE_FAILED"
-        payload = {"error": str(exc)}
+        payload = {"error": "UNEXPECTED"}
 
     if actor_id is not None:
         logger.info(
             "Backup restore finished",
             extra={"actor_id": actor_id, "action": action, "payload": payload},
         )
+    try:
+        backup_service.append_restore_outcome(
+            f"actor_id={actor_id} action={action} payload={payload}"
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("Failed to write restore outcome log")
     await state.clear()
     await callback.message.answer(text)

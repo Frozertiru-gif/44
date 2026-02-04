@@ -132,14 +132,15 @@ class BackupService:
         env_path = Path(self._settings.backup_env_path)
         return _parse_backup_env(env_path)
 
-    def _resolve_db_config(self) -> tuple[str, str, str]:
+    def _resolve_db_config(self) -> tuple[str, str, str, str]:
         backup_env = self._get_backup_env()
-        container = self._settings.db_container or backup_env.get("DB_CONTAINER")
+        db_host = backup_env.get("DB_HOST") or "db"
+        db_port = backup_env.get("DB_PORT") or "5432"
         db_name = self._settings.db_name or backup_env.get("DB_NAME")
         db_user = self._settings.db_user or backup_env.get("DB_USER")
-        if not container or not db_name or not db_user:
-            raise BackupConfigError("DB_CONTAINER/DB_NAME/DB_USER должны быть заданы.")
-        return container, db_name, db_user
+        if not db_name or not db_user:
+            raise BackupConfigError("DB_NAME/DB_USER должны быть заданы.")
+        return db_host, db_port, db_name, db_user
 
     def _get_passphrase(self) -> str:
         if os.getenv("BACKUP_PASSPHRASE"):
@@ -305,8 +306,11 @@ class BackupService:
 
     async def restore_from_backup_file(self, path: Path) -> None:
         async with self._lock.acquire():
-            container, db_name, db_user = self._resolve_db_config()
+            db_host, db_port, db_name, db_user = self._resolve_db_config()
             passphrase = self._get_passphrase()
+            db_password = os.getenv("DB_PASSWORD")
+            if not db_password:
+                raise BackupConfigError("DB_PASSWORD не задан.")
             restore_log = DEFAULT_RESTORE_LOG
             restore_log.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(delete=False, suffix=".dump") as temp_file:
@@ -340,23 +344,21 @@ class BackupService:
                     with plain_path.open("rb") as dump_file:
                         try:
                             restore_proc = await asyncio.create_subprocess_exec(
-                                "docker",
-                                "exec",
-                                "-i",
-                                container,
-                                "pg_restore",
+                                "psql",
+                                "-h",
+                                db_host,
+                                "-p",
+                                db_port,
                                 "-U",
                                 db_user,
-                                "-d",
                                 db_name,
-                                "--clean",
-                                "--if-exists",
                                 stdin=dump_file,
                                 stdout=log_file,
                                 stderr=log_file,
+                                env={**os.environ, "PGPASSWORD": db_password},
                             )
                         except FileNotFoundError as exc:
-                            raise BackupError("docker не найден.") from exc
+                            raise BackupError("psql не найден.") from exc
                         await restore_proc.wait()
                         if restore_proc.returncode != 0:
                             raise BackupError("Ошибка восстановления базы данных.")

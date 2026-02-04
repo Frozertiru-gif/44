@@ -37,6 +37,7 @@ async def build_main_menu(role: UserRole) -> ReplyKeyboardMarkup:
         rows.append([KeyboardButton(text="⬇️ Экспорт Excel")])
         rows.append([KeyboardButton(text="📍 Проблемы")])
         rows.append([KeyboardButton(text="⚙️ Настройки проекта")])
+        rows.append([KeyboardButton(text="🛡 Резервные копии")])
     if role in {UserRole.ADMIN, UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN, UserRole.MASTER}:
         rows.append([KeyboardButton(text="👥 Привязки младших мастеров")])
     rows.append([KeyboardButton(text="ℹ️ Помощь")])

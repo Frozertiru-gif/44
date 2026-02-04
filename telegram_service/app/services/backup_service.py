@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import shlex
+import shutil
 import subprocess
 import tempfile
 from contextlib import asynccontextmanager
@@ -29,6 +30,7 @@ DEFAULT_LOCK_PATH = Path("/tmp/backup.lock")
 DEFAULT_METADATA_FILENAME = "last_backup.json"
 DEFAULT_RESTORE_LOG = Path("/var/log/db_restore.log")
 BACKUP_TIMEOUT_SECONDS = 10 * 60
+CUSTOM_DUMP_MAGIC = b"PGDMP"
 
 
 class BackupError(RuntimeError):
@@ -134,16 +136,6 @@ class BackupService:
         env_path = Path(self._settings.backup_env_path)
         return _parse_backup_env(env_path)
 
-    def _resolve_db_config(self) -> tuple[str, str, str, str]:
-        backup_env = self._get_backup_env()
-        db_host = backup_env.get("DB_HOST") or "db"
-        db_port = backup_env.get("DB_PORT") or "5432"
-        db_name = self._settings.db_name or backup_env.get("DB_NAME")
-        db_user = self._settings.db_user or backup_env.get("DB_USER")
-        if not db_name or not db_user:
-            raise BackupConfigError("DB_NAME/DB_USER должны быть заданы.")
-        return db_host, db_port, db_name, db_user
-
     def _get_passphrase(self) -> str:
         if os.getenv("BACKUP_PASSPHRASE"):
             return os.environ["BACKUP_PASSPHRASE"]
@@ -153,14 +145,53 @@ class BackupService:
             raise BackupConfigError("BACKUP_PASSPHRASE не задан.")
         return passphrase
 
-    def _extract_db_password(self) -> str | None:
+    def _resolve_database_url(self) -> tuple[str, str, str, str, str]:
         database_url = self._settings.database_url or os.getenv("DATABASE_URL")
         if not database_url:
-            return None
+            raise BackupConfigError("DATABASE_URL должен быть задан для восстановления.")
         try:
-            return make_url(database_url).password
-        except Exception:  # pragma: no cover - defensive in case of malformed URL
-            return None
+            url = make_url(database_url)
+        except Exception as exc:  # pragma: no cover - defensive in case of malformed URL
+            raise BackupConfigError("Некорректный DATABASE_URL.") from exc
+        host = url.host or "localhost"
+        port = str(url.port or 5432)
+        db_name = url.database or ""
+        db_user = url.username or ""
+        db_password = url.password or ""
+        if not db_name or not db_user:
+            raise BackupConfigError("DATABASE_URL должен содержать пользователя и имя базы.")
+        return host, port, db_name, db_user, db_password
+
+    def _require_binary(self, name: str, hint: str) -> None:
+        if shutil.which(name) is None:
+            raise BackupError(f"{name} не найден. Установите {hint}.")
+
+    def _append_log(self, log_file: Any, message: str) -> None:
+        log_file.write(message.encode("utf-8", errors="ignore"))
+        log_file.flush()
+
+    async def _run_logged_command(
+        self,
+        command: list[str],
+        log_file: Any,
+        env: dict[str, str],
+        error_message: str,
+    ) -> subprocess.CompletedProcess[bytes]:
+        self._append_log(log_file, f"\n$ {' '.join(command)}\n")
+        try:
+            result = await asyncio.to_thread(
+                subprocess.run,
+                command,
+                stdout=log_file,
+                stderr=log_file,
+                env=env,
+                check=True,
+            )
+        except FileNotFoundError as exc:
+            raise BackupError(f"{command[0]} не найден.") from exc
+        except subprocess.CalledProcessError as exc:
+            raise BackupError(error_message) from exc
+        return result
 
     def _load_metadata(self) -> dict[str, Any] | None:
         if not self._metadata_path.exists():
@@ -360,9 +391,8 @@ class BackupService:
 
     async def restore_from_backup_file(self, path: Path) -> None:
         async with self._lock.acquire():
-            db_host, db_port, db_name, db_user = self._resolve_db_config()
+            db_host, db_port, db_name, db_user, db_password = self._resolve_database_url()
             passphrase = self._get_passphrase()
-            db_password = self._extract_db_password()
             if not db_password:
                 raise BackupConfigError(
                     "Пароль БД не найден. Укажите пароль в DATABASE_URL."
@@ -377,6 +407,13 @@ class BackupService:
 
             try:
                 with restore_log.open("ab") as log_file:
+                    self._append_log(
+                        log_file,
+                        f"\n--- restore started {datetime.now(tz=timezone.utc).isoformat()} ---\n",
+                    )
+                    if not path.exists():
+                        raise BackupError(f"Файл бэкапа не найден: {path}")
+                    self._require_binary("gpg", "gnupg")
                     try:
                         gpg_proc = await asyncio.create_subprocess_exec(
                             "gpg",
@@ -391,43 +428,115 @@ class BackupService:
                             "-d",
                             str(path),
                             stdin=asyncio.subprocess.PIPE,
-                            stdout=log_file,
-                            stderr=log_file,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.PIPE,
                         )
                     except FileNotFoundError as exc:
                         raise BackupError("gpg не найден.") from exc
-                    await gpg_proc.communicate(passphrase.encode("utf-8"))
+                    stdout, stderr = await gpg_proc.communicate(passphrase.encode("utf-8"))
+                    if stdout:
+                        log_file.write(stdout)
+                    if stderr:
+                        log_file.write(stderr)
                     if gpg_proc.returncode != 0:
+                        error_text = (stderr or b"").decode("utf-8", errors="ignore").lower()
+                        if "bad session key" in error_text or "decryption failed" in error_text:
+                            raise BackupError("Неверный passphrase (Bad session key).") from None
                         raise BackupError("Не удалось расшифровать бэкап.")
 
                     with plain_path.open("rb") as dump_file:
-                        try:
-                            await asyncio.to_thread(
-                                subprocess.run,
-                                [
-                                    "psql",
-                                    "-h",
-                                    db_host,
-                                    "-p",
-                                    db_port,
-                                    "-U",
-                                    db_user,
-                                    db_name,
-                                ],
-                                stdin=dump_file,
-                                stdout=log_file,
-                                stderr=subprocess.PIPE,
-                                env=env,
-                                check=True,
-                            )
-                        except FileNotFoundError as exc:
-                            raise BackupError("psql не найден.") from exc
-                        except subprocess.CalledProcessError as exc:
-                            stderr = exc.stderr.decode("utf-8", errors="ignore") if exc.stderr else ""
-                            logger.error("psql restore failed: %s", stderr.strip())
-                            raise BackupError(
-                                "Ошибка восстановления базы данных (psql). Подробности в логах."
-                            ) from exc
+                        header = dump_file.read(5)
+                    is_custom = header == CUSTOM_DUMP_MAGIC
+
+                    self._require_binary("psql", "postgresql-client")
+                    maintenance_db = "postgres" if db_name != "postgres" else "template1"
+                    escaped_db_name = db_name.replace("'", "''")
+                    terminate_query = (
+                        "SELECT pg_terminate_backend(pid) "
+                        "FROM pg_stat_activity "
+                        f"WHERE datname = '{escaped_db_name}' "
+                        "AND pid <> pg_backend_pid();"
+                    )
+                    self._append_log(log_file, "\n-- terminate connections\n")
+                    try:
+                        terminate_proc = await asyncio.to_thread(
+                            subprocess.run,
+                            [
+                                "psql",
+                                "-h",
+                                db_host,
+                                "-p",
+                                db_port,
+                                "-U",
+                                db_user,
+                                "-d",
+                                maintenance_db,
+                                "-t",
+                                "-A",
+                                "-c",
+                                terminate_query,
+                            ],
+                            stdout=subprocess.PIPE,
+                            stderr=log_file,
+                            env=env,
+                            check=True,
+                        )
+                    except subprocess.CalledProcessError as exc:
+                        raise BackupError(
+                            "Не удалось завершить активные подключения к БД. Проверьте доступ."
+                        ) from exc
+                    if terminate_proc.stdout:
+                        log_file.write(terminate_proc.stdout)
+                    terminated = 0
+                    if terminate_proc.stdout:
+                        terminated = sum(1 for line in terminate_proc.stdout.splitlines() if line.strip() == b"t")
+                    logger.info("Terminated %s active connections to %s", terminated, db_name)
+                    self._append_log(log_file, f"Terminated connections: {terminated}\n")
+
+                    if is_custom:
+                        self._require_binary("pg_restore", "postgresql-client")
+                        await self._run_logged_command(
+                            [
+                                "pg_restore",
+                                "--clean",
+                                "--if-exists",
+                                "--no-owner",
+                                "--no-privileges",
+                                "-h",
+                                db_host,
+                                "-p",
+                                db_port,
+                                "-U",
+                                db_user,
+                                "-d",
+                                db_name,
+                                str(plain_path),
+                            ],
+                            log_file,
+                            env,
+                            "Ошибка восстановления базы данных (pg_restore). Подробности в логах.",
+                        )
+                    else:
+                        await self._run_logged_command(
+                            [
+                                "psql",
+                                "-h",
+                                db_host,
+                                "-p",
+                                db_port,
+                                "-U",
+                                db_user,
+                                "-d",
+                                db_name,
+                                "--set",
+                                "ON_ERROR_STOP=1",
+                                "-f",
+                                str(plain_path),
+                            ],
+                            log_file,
+                            env,
+                            "Ошибка восстановления базы данных (psql). Подробности в логах.",
+                        )
             finally:
                 if plain_path.exists():
                     plain_path.unlink()

@@ -12,4 +12,4 @@ backups/
 *.dump
 *.dump.gpg
 last_backup.json
-scripts/backup.env
+telegram_service/scripts/backup.env

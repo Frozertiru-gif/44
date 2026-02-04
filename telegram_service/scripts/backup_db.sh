@@ -5,7 +5,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
 source "$SCRIPT_DIR/backup.env"
 
-DB_CONTAINER="${DB_CONTAINER:-telegram_service-db-1}"
+DB_HOST="${DB_HOST:-db}"
+DB_PORT="${DB_PORT:-5432}"
 DB_NAME="${DB_NAME:-telegram_service}"
 DB_USER="${DB_USER:-telegram}"
 BACKUP_DIR="${BACKUP_DIR:-/opt/master_stack/app/telegram_service/backups}"
@@ -34,7 +35,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-docker exec "$DB_CONTAINER" pg_dump -Fc -U "$DB_USER" "$DB_NAME" >"$plain_dump"
+pg_dump -h "$DB_HOST" -p "$DB_PORT" -U "$DB_USER" -Fc "$DB_NAME" >"$plain_dump"
 
 printf '%s' "$BACKUP_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 -c -o "$enc_dump" "$plain_dump"
 
@@ -48,7 +49,7 @@ cat <<META >"$meta_tmp"
 {
   "timestamp": "${timestamp}",
   "database": "${DB_NAME}",
-  "container": "${DB_CONTAINER}",
+  "container": "${DB_HOST}",
   "user": "${DB_USER}",
   "backup_file": "$(basename "$enc_dump")",
   "backup_dir": "${BACKUP_DIR}"

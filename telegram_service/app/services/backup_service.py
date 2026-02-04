@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 import fcntl
 from aiogram import Bot
@@ -150,6 +151,14 @@ class BackupService:
         if not passphrase:
             raise BackupConfigError("BACKUP_PASSPHRASE не задан.")
         return passphrase
+
+    def _extract_db_password(self) -> str | None:
+        database_url = os.getenv("DATABASE_URL") or self._settings.database_url
+        if database_url:
+            parsed = urlparse(database_url)
+            if parsed.password:
+                return unquote(parsed.password)
+        return os.getenv("PGPASSWORD")
 
     def _load_metadata(self) -> dict[str, Any] | None:
         if not self._metadata_path.exists():
@@ -308,9 +317,11 @@ class BackupService:
         async with self._lock.acquire():
             db_host, db_port, db_name, db_user = self._resolve_db_config()
             passphrase = self._get_passphrase()
-            db_password = os.getenv("DB_PASSWORD")
+            db_password = self._extract_db_password()
             if not db_password:
-                raise BackupConfigError("DB_PASSWORD не задан.")
+                raise BackupConfigError(
+                    "Пароль БД не найден. Укажите пароль в DATABASE_URL или переменной окружения PGPASSWORD."
+                )
             restore_log = DEFAULT_RESTORE_LOG
             restore_log.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(delete=False, suffix=".dump") as temp_file:

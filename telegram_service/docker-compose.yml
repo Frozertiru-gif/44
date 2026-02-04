@@ -27,6 +27,8 @@ services:
     entrypoint: ["/app/scripts/entrypoint.sh"]
     ports:
       - "${WEBHOOK_PORT:-8000}:${WEBHOOK_PORT:-8000}"
+    volumes:
+      - ./backups:/app/backups
     restart: unless-stopped
   migrations:
     build:

@@ -1,10 +1,23 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKUP_ENV_PATH="${BACKUP_ENV_PATH:-${SCRIPT_DIR}/backup.env}"
+
+if [[ -f "$BACKUP_ENV_PATH" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "$BACKUP_ENV_PATH"
+  set +a
+else
+  echo "backup.env not found at $BACKUP_ENV_PATH" >&2
+  exit 1
+fi
+
 DB_CONTAINER="${DB_CONTAINER:-telegram_service-db-1}"
 DB_NAME="${DB_NAME:-telegram_service}"
 DB_USER="${DB_USER:-telegram}"
-BACKUP_DIR="${BACKUP_DIR:-./backups}"
+BACKUP_DIR="${BACKUP_DIR:-${SCRIPT_DIR}/../backups}"
 RETENTION_KEEP="${RETENTION_KEEP:-14}"
 BACKUP_PASSPHRASE="${BACKUP_PASSPHRASE:-}"
 
@@ -14,6 +27,7 @@ if [[ -z "$BACKUP_PASSPHRASE" ]]; then
 fi
 
 mkdir -p "$BACKUP_DIR"
+BACKUP_DIR="$(cd "$BACKUP_DIR" && pwd)"
 
 if ! [[ "$RETENTION_KEEP" =~ ^[0-9]+$ ]]; then
   echo "RETENTION_KEEP must be a non-negative integer" >&2

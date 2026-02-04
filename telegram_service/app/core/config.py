@@ -24,11 +24,11 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("BACKUP_DIR", "backup_dir"),
     )
     backup_script_path: str = Field(
-        default="/opt/master_stack/app/scripts/backup_db.sh",
+        default="/opt/master_stack/app/telegram_service/scripts/backup_db.sh",
         validation_alias=AliasChoices("BACKUP_SCRIPT_PATH", "backup_script_path"),
     )
     backup_env_path: str = Field(
-        default="/opt/master_stack/app/scripts/backup.env",
+        default="/opt/master_stack/app/telegram_service/scripts/backup.env",
         validation_alias=AliasChoices("BACKUP_ENV_PATH", "backup_env_path"),
     )
     db_container: str | None = Field(default=None, validation_alias=AliasChoices("DB_CONTAINER", "db_container"))

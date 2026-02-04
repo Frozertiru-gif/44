@@ -6,13 +6,14 @@ import json
 import logging
 import os
 import shlex
+import subprocess
 import tempfile
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from sqlalchemy.engine.url import make_url
 
 import fcntl
 from aiogram import Bot
@@ -155,9 +156,12 @@ class BackupService:
     def _extract_db_password(self) -> str | None:
         database_url = os.getenv("DATABASE_URL") or self._settings.database_url
         if database_url:
-            parsed = urlparse(database_url)
-            if parsed.password:
-                return unquote(parsed.password)
+            try:
+                password = make_url(database_url).password
+            except Exception:  # pragma: no cover - defensive in case of malformed URL
+                password = None
+            if password:
+                return password
         return os.getenv("PGPASSWORD")
 
     def _load_metadata(self) -> dict[str, Any] | None:
@@ -354,25 +358,30 @@ class BackupService:
 
                     with plain_path.open("rb") as dump_file:
                         try:
-                            restore_proc = await asyncio.create_subprocess_exec(
-                                "psql",
-                                "-h",
-                                db_host,
-                                "-p",
-                                db_port,
-                                "-U",
-                                db_user,
-                                db_name,
+                            await asyncio.to_thread(
+                                subprocess.run,
+                                [
+                                    "psql",
+                                    "-h",
+                                    db_host,
+                                    "-p",
+                                    db_port,
+                                    "-U",
+                                    db_user,
+                                    db_name,
+                                ],
                                 stdin=dump_file,
                                 stdout=log_file,
-                                stderr=log_file,
+                                stderr=subprocess.PIPE,
                                 env={**os.environ, "PGPASSWORD": db_password},
+                                check=True,
                             )
                         except FileNotFoundError as exc:
                             raise BackupError("psql не найден.") from exc
-                        await restore_proc.wait()
-                        if restore_proc.returncode != 0:
-                            raise BackupError("Ошибка восстановления базы данных.")
+                        except subprocess.CalledProcessError as exc:
+                            stderr = exc.stderr.decode("utf-8", errors="ignore") if exc.stderr else ""
+                            logger.error("psql restore failed: %s", stderr.strip())
+                            raise BackupError("Ошибка восстановления базы данных.") from exc
             finally:
                 if plain_path.exists():
                     plain_path.unlink()

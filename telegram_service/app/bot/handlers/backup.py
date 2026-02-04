@@ -253,6 +253,20 @@ async def backup_restore_confirm(callback: CallbackQuery) -> None:
         return
     await callback.answer()
     await callback.message.answer("⏳ Восстанавливаю базу данных...")
+    if actor_id is not None:
+        try:
+            async with async_session_factory() as session:
+                await audit_service.log_audit_event(
+                    session,
+                    actor_id=actor_id,
+                    action="BACKUP_RESTORE_STARTED",
+                    entity_type="backup",
+                    entity_id=None,
+                    payload={"source": "latest_local"},
+                )
+                await session.commit()
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to write backup restore started audit event")
 
     try:
         await backup_service.restore_latest_local_backup()
@@ -273,17 +287,11 @@ async def backup_restore_confirm(callback: CallbackQuery) -> None:
         action = "BACKUP_RESTORE_FAILED"
         payload = {"error": str(exc)}
 
-    async with async_session_factory() as session:
-        if actor_id is not None:
-            await audit_service.log_audit_event(
-                session,
-                actor_id=actor_id,
-                action=action,
-                entity_type="backup",
-                entity_id=None,
-                payload=payload,
-            )
-            await session.commit()
+    if actor_id is not None:
+        logger.info(
+            "Backup restore finished",
+            extra={"actor_id": actor_id, "action": action, "payload": payload},
+        )
     await callback.message.answer(text)
 
 
@@ -360,6 +368,20 @@ async def backup_restore_file_confirm(callback: CallbackQuery, state: FSMContext
         await callback.message.answer("Файл для восстановления не найден. Пришлите файл заново.")
         await state.clear()
         return
+    if actor_id is not None:
+        try:
+            async with async_session_factory() as session:
+                await audit_service.log_audit_event(
+                    session,
+                    actor_id=actor_id,
+                    action="BACKUP_RESTORE_STARTED",
+                    entity_type="backup",
+                    entity_id=None,
+                    payload={"source": "uploaded_file"},
+                )
+                await session.commit()
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed to write backup restore started audit event")
 
     try:
         await backup_service.restore_from_backup_file(Path(restore_path))
@@ -380,16 +402,10 @@ async def backup_restore_file_confirm(callback: CallbackQuery, state: FSMContext
         action = "BACKUP_RESTORE_FAILED"
         payload = {"error": str(exc)}
 
-    async with async_session_factory() as session:
-        if actor_id is not None:
-            await audit_service.log_audit_event(
-                session,
-                actor_id=actor_id,
-                action=action,
-                entity_type="backup",
-                entity_id=None,
-                payload=payload,
-            )
-            await session.commit()
+    if actor_id is not None:
+        logger.info(
+            "Backup restore finished",
+            extra={"actor_id": actor_id, "action": action, "payload": payload},
+        )
     await state.clear()
     await callback.message.answer(text)

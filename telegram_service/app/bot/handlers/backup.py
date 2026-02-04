@@ -4,10 +4,16 @@ import logging
 from pathlib import Path
 
 from aiogram import F, Bot, Router
+from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, Message
 
 from app.bot.handlers.permissions import BACKUP_ADMIN_ROLES
-from app.bot.keyboards.backup import backup_menu_keyboard, backup_restore_confirm_keyboard
+from app.bot.keyboards.backup import (
+    backup_menu_keyboard,
+    backup_restore_confirm_keyboard,
+    backup_restore_file_confirm_keyboard,
+)
+from app.bot.states.backup import BackupRestoreStates
 from app.core.config import get_settings
 from app.db.session import async_session_factory
 from app.services.audit_service import AuditService
@@ -237,7 +243,7 @@ async def backup_restore_prompt(callback: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data.startswith("backup:restore_confirm:"))
-async def backup_restore_confirm(callback: CallbackQuery, bot: Bot) -> None:
+async def backup_restore_confirm(callback: CallbackQuery) -> None:
     allowed, actor_id = await _ensure_admin_callback(callback)
     if not allowed:
         return
@@ -249,22 +255,10 @@ async def backup_restore_confirm(callback: CallbackQuery, bot: Bot) -> None:
     await callback.message.answer("⏳ Восстанавливаю базу данных...")
 
     try:
-        metadata = backup_service.get_latest_metadata()
-        if not metadata.tg or not metadata.tg.get("file_id"):
-            raise BackupError("Нет file_id для последнего бэкапа.")
-        if metadata.tg.get("chat_id") != get_settings().backup_chat_id:
-            raise BackupError("Бэкап получен не из разрешённого чата.")
-        if metadata.size_bytes > MAX_BACKUP_SIZE_BYTES:
-            raise BackupError("Размер бэкапа превышает допустимый лимит.")
-
-        dest_path = Path(metadata.path).with_name(f"restore_{metadata.filename}")
-        await backup_service.download_backup_from_file_id(bot, metadata.tg["file_id"], dest_path)
-        await backup_service.restore_from_backup_file(dest_path)
-        if dest_path.exists():
-            dest_path.unlink()
+        await backup_service.restore_latest_local_backup()
         text = "✅ Восстановление завершено."
         action = "BACKUP_RESTORE_COMPLETED"
-        payload = {"filename": metadata.filename}
+        payload = {"source": "latest_local"}
     except BackupOperationInProgress:
         text = "Сейчас уже выполняется операция бэкапа или восстановления."
         action = "BACKUP_RESTORE_SKIPPED"
@@ -294,7 +288,108 @@ async def backup_restore_confirm(callback: CallbackQuery, bot: Bot) -> None:
 
 
 @router.callback_query(F.data == "backup:restore_cancel")
-async def backup_restore_cancel(callback: CallbackQuery) -> None:
+async def backup_restore_cancel(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
+    await state.clear()
     if callback.message:
         await callback.message.answer("Восстановление отменено.")
+
+
+@router.callback_query(F.data == "backup:restore_file_prompt")
+async def backup_restore_file_prompt(callback: CallbackQuery, state: FSMContext) -> None:
+    allowed, _ = await _ensure_admin_callback(callback)
+    if not allowed:
+        return
+    await callback.answer()
+    await state.clear()
+    await state.set_state(BackupRestoreStates.waiting_for_document)
+    await callback.message.answer("Пришлите .dump.gpg документом.")
+
+
+@router.message(BackupRestoreStates.waiting_for_document, F.document)
+async def backup_restore_file_receive(message: Message, state: FSMContext, bot: Bot) -> None:
+    allowed, actor_id = await _ensure_admin(message)
+    if not allowed:
+        return
+    document = message.document
+    if document is None:
+        await message.answer("Пришлите файл .dump.gpg документом.")
+        return
+    filename = (document.file_name or "").strip()
+    if not filename.lower().endswith(".dump.gpg"):
+        await message.answer("Файл должен иметь расширение .dump.gpg. Пришлите файл заново.")
+        return
+    if document.file_size and document.file_size > MAX_BACKUP_SIZE_BYTES:
+        await message.answer("Размер файла превышает допустимый лимит.")
+        return
+    dest_path = backup_service.build_import_path(filename)
+    try:
+        await backup_service.download_backup_from_file_id(bot, document.file_id, dest_path)
+    except BackupError as exc:
+        await message.answer(f"Ошибка получения файла: {exc}")
+        return
+
+    await state.update_data(restore_file_path=str(dest_path), actor_id=actor_id)
+    await state.set_state(BackupRestoreStates.confirm_restore)
+    await message.answer(
+        "Файл получен, восстановление перезапишет БД. Подтвердить?",
+        reply_markup=backup_restore_file_confirm_keyboard(actor_id or 0),
+    )
+
+
+@router.message(BackupRestoreStates.waiting_for_document)
+async def backup_restore_file_invalid(message: Message) -> None:
+    await message.answer("Пришлите .dump.gpg документом.")
+
+
+@router.callback_query(F.data.startswith("backup:restore_file_confirm:"))
+async def backup_restore_file_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    allowed, actor_id = await _ensure_admin_callback(callback)
+    if not allowed:
+        return
+    callback_actor = int(callback.data.split(":", 2)[2])
+    if actor_id is None or callback_actor != actor_id:
+        await callback.answer("Недостаточно прав", show_alert=True)
+        return
+    data = await state.get_data()
+    restore_path = data.get("restore_file_path")
+    await callback.answer()
+    await callback.message.answer("⏳ Восстанавливаю базу данных...")
+
+    if not restore_path:
+        await callback.message.answer("Файл для восстановления не найден. Пришлите файл заново.")
+        await state.clear()
+        return
+
+    try:
+        await backup_service.restore_from_backup_file(Path(restore_path))
+        text = "✅ Восстановление завершено."
+        action = "BACKUP_RESTORE_COMPLETED"
+        payload = {"source": "uploaded_file", "path": restore_path}
+    except BackupOperationInProgress:
+        text = "Сейчас уже выполняется операция бэкапа или восстановления."
+        action = "BACKUP_RESTORE_SKIPPED"
+        payload = {"reason": "BUSY"}
+    except BackupError as exc:
+        text = f"Ошибка восстановления: {exc}"
+        action = "BACKUP_RESTORE_FAILED"
+        payload = {"error": str(exc)}
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("Unexpected restore error")
+        text = "Неожиданная ошибка восстановления."
+        action = "BACKUP_RESTORE_FAILED"
+        payload = {"error": str(exc)}
+
+    async with async_session_factory() as session:
+        if actor_id is not None:
+            await audit_service.log_audit_event(
+                session,
+                actor_id=actor_id,
+                action=action,
+                entity_type="backup",
+                entity_id=None,
+                payload=payload,
+            )
+            await session.commit()
+    await state.clear()
+    await callback.message.answer(text)

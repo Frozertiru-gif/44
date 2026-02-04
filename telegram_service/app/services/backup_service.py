@@ -154,15 +154,13 @@ class BackupService:
         return passphrase
 
     def _extract_db_password(self) -> str | None:
-        database_url = os.getenv("DATABASE_URL") or self._settings.database_url
-        if database_url:
-            try:
-                password = make_url(database_url).password
-            except Exception:  # pragma: no cover - defensive in case of malformed URL
-                password = None
-            if password:
-                return password
-        return os.getenv("PGPASSWORD")
+        database_url = self._settings.database_url or os.getenv("DATABASE_URL")
+        if not database_url:
+            return None
+        try:
+            return make_url(database_url).password
+        except Exception:  # pragma: no cover - defensive in case of malformed URL
+            return None
 
     def _load_metadata(self) -> dict[str, Any] | None:
         if not self._metadata_path.exists():
@@ -311,11 +309,54 @@ class BackupService:
     async def download_backup_from_file_id(self, bot: Bot, file_id: str, dest_path: Path) -> None:
         if dest_path.exists():
             dest_path.unlink()
-        file_info = await bot.get_file(file_id)
-        if file_info.file_size and file_info.file_size > MAX_BACKUP_SIZE_BYTES:
+        tg_file = await bot.get_file(file_id)
+        if not tg_file.file_path:
+            raise BackupError("Не удалось скачать файл из Telegram, пришлите файл заново.")
+        if tg_file.file_size and tg_file.file_size > MAX_BACKUP_SIZE_BYTES:
             raise BackupError("Размер файла превышает лимит.")
         self._backup_dir.mkdir(parents=True, exist_ok=True)
-        await bot.download_file(file_info.file_path, destination=dest_path)
+        await bot.download_file(tg_file.file_path, destination=dest_path)
+
+    def _resolve_latest_local_metadata(self) -> BackupMetadata:
+        metadata = self._normalize_metadata(self._load_metadata())
+        if metadata:
+            return metadata
+        if not self._backup_dir.exists():
+            raise BackupError(f"Файлы бэкапов не найдены в {self._backup_dir}")
+        backups = sorted(self._backup_dir.glob("*.dump.gpg"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not backups:
+            raise BackupError(f"Файлы бэкапов не найдены в {self._backup_dir}")
+        file_path = backups[0]
+        created_at = _format_iso(datetime.fromtimestamp(file_path.stat().st_mtime, tz=timezone.utc))
+        return BackupMetadata(
+            created_at=created_at,
+            filename=file_path.name,
+            path=str(file_path),
+            size_bytes=file_path.stat().st_size,
+            sha256=self.compute_sha256(file_path),
+        )
+
+    def _build_import_path(self, original_name: str | None) -> Path:
+        imports_dir = self._backup_dir / "imports"
+        imports_dir.mkdir(parents=True, exist_ok=True)
+        safe_name = Path(original_name or "backup.dump.gpg").name
+        timestamp = datetime.now(tz=timezone.utc).strftime("%Y%m%d_%H%M%S")
+        return imports_dir / f"{timestamp}_{safe_name}"
+
+    def build_import_path(self, original_name: str | None) -> Path:
+        return self._build_import_path(original_name)
+
+    async def restore_latest_local_backup(self) -> None:
+        metadata = self._resolve_latest_local_metadata()
+        await self.restore_from_backup_file(Path(metadata.path))
+
+    async def restore_from_uploaded_tg_document(
+        self, bot: Bot, file_id: str, original_name: str | None = None
+    ) -> Path:
+        dest_path = self._build_import_path(original_name)
+        await self.download_backup_from_file_id(bot, file_id, dest_path)
+        await self.restore_from_backup_file(dest_path)
+        return dest_path
 
     async def restore_from_backup_file(self, path: Path) -> None:
         async with self._lock.acquire():
@@ -324,8 +365,11 @@ class BackupService:
             db_password = self._extract_db_password()
             if not db_password:
                 raise BackupConfigError(
-                    "Пароль БД не найден. Укажите пароль в DATABASE_URL или переменной окружения PGPASSWORD."
+                    "Пароль БД не найден. Укажите пароль в DATABASE_URL."
                 )
+            env = os.environ.copy()
+            if db_password:
+                env["PGPASSWORD"] = db_password
             restore_log = DEFAULT_RESTORE_LOG
             restore_log.parent.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(delete=False, suffix=".dump") as temp_file:
@@ -373,7 +417,7 @@ class BackupService:
                                 stdin=dump_file,
                                 stdout=log_file,
                                 stderr=subprocess.PIPE,
-                                env={**os.environ, "PGPASSWORD": db_password},
+                                env=env,
                                 check=True,
                             )
                         except FileNotFoundError as exc:
@@ -381,7 +425,9 @@ class BackupService:
                         except subprocess.CalledProcessError as exc:
                             stderr = exc.stderr.decode("utf-8", errors="ignore") if exc.stderr else ""
                             logger.error("psql restore failed: %s", stderr.strip())
-                            raise BackupError("Ошибка восстановления базы данных.") from exc
+                            raise BackupError(
+                                "Ошибка восстановления базы данных (psql). Подробности в логах."
+                            ) from exc
             finally:
                 if plain_path.exists():
                     plain_path.unlink()

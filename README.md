@@ -79,3 +79,22 @@ npm run start
 
 ## События аналитики
 Подготовлен хук `track()` в `src/lib/track.ts` для будущей интеграции аналитики.
+
+## Резервное копирование PostgreSQL (Docker)
+
+### Подготовка конфигурации
+Скопируйте пример файла переменных и заполните пароль шифрования:
+```bash
+cp scripts/backup.env.example scripts/backup.env
+```
+
+### Ручной запуск бэкапа
+```bash
+set -a; source scripts/backup.env; set +a; ./scripts/backup_db.sh
+```
+
+### Cron (пример)
+Запускайте из корня репозитория, чтобы относительные пути работали корректно:
+```cron
+15 3 * * * cd /opt/master_stack/app && set -a && . scripts/backup.env && set +a && ./scripts/backup_db.sh >> /var/log/backup_db.log 2>&1
+```

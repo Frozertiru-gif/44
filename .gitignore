@@ -7,3 +7,9 @@ npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
 /data/leads.jsonl
+
+backups/
+*.dump
+*.dump.gpg
+last_backup.json
+scripts/backup.env

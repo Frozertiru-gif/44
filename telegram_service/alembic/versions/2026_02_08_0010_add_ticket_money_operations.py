@@ -7,6 +7,7 @@ Create Date: 2026-02-08 00:00:00.000000
 """
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 revision = "2026_02_08_0010"
@@ -16,6 +17,31 @@ depends_on = None
 
 
 def upgrade() -> None:
+    op.execute(
+        sa.text(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM pg_type
+                    WHERE typname = 'project_transaction_type'
+                ) THEN
+                    CREATE TYPE project_transaction_type AS ENUM ('INCOME', 'EXPENSE');
+                END IF;
+            END
+            $$;
+            """
+        )
+    )
+
+    transaction_type_enum = postgresql.ENUM(
+        "INCOME",
+        "EXPENSE",
+        name="project_transaction_type",
+        create_type=False,
+    )
+
     op.create_table(
         "ticket_money_operations",
         sa.Column("id", sa.BigInteger(), autoincrement=True, nullable=False),
@@ -23,7 +49,7 @@ def upgrade() -> None:
         sa.Column("created_at", sa.DateTime(), server_default=sa.text("now()"), nullable=False),
         sa.Column(
             "op_type",
-            sa.Enum("INCOME", "EXPENSE", name="project_transaction_type", create_type=False),
+            transaction_type_enum,
             nullable=False,
         ),
         sa.Column("amount", sa.Numeric(12, 2), nullable=False),
@@ -40,3 +66,17 @@ def downgrade() -> None:
     op.drop_index("ix_ticket_money_operations_ticket_id", table_name="ticket_money_operations")
     op.drop_index("ix_ticket_money_operations_created_at", table_name="ticket_money_operations")
     op.drop_table("ticket_money_operations")
+    op.execute(
+        sa.text(
+            """
+            DO $$
+            BEGIN
+                DROP TYPE IF EXISTS project_transaction_type;
+            EXCEPTION
+                WHEN dependent_objects_still_exist THEN
+                    NULL;
+            END
+            $$;
+            """
+        )
+    )

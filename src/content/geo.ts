@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 export type GeoItem = {
@@ -30,6 +30,11 @@ export const GEO_BY_SLUG = new Map(GEO.map((g) => [g.slug, g] as const));
 
 function collectReservedRootSlugs() {
   const appDir = join(process.cwd(), "app");
+
+  if (!existsSync(appDir)) {
+    return new Set<string>();
+  }
+
   const entries = readdirSync(appDir, { withFileTypes: true });
 
   return new Set(
@@ -52,4 +57,11 @@ function validateGeoSlugsNoConflicts() {
   }
 }
 
-validateGeoSlugsNoConflicts();
+const isProductionRuntime =
+  process.env.NODE_ENV === "production" && process.env.NEXT_PHASE !== "phase-production-build";
+
+// File-system route collision checks are useful during development/build,
+// but must not run in production runtime containers that don't include source app/.
+if (!isProductionRuntime) {
+  validateGeoSlugsNoConflicts();
+}

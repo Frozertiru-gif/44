@@ -2,8 +2,9 @@ from uuid import UUID
 
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 
+from app.bot.handlers.utils import format_executor_link
 from app.db.enums import TicketStatus
-from app.db.models import Ticket
+from app.db.models import Ticket, User
 
 
 def request_chat_keyboard(ticket: Ticket, bot_username: str) -> InlineKeyboardMarkup:
@@ -29,4 +30,13 @@ def lead_request_keyboard(lead_id: UUID) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text="🗑 Спам", callback_data=f"lead:spam:{lead_id_str}"),
             ],
         ]
+    )
+
+
+def executor_only_keyboard(executor: User | None) -> InlineKeyboardMarkup | None:
+    label, url = format_executor_link(executor)
+    if not url:
+        return None
+    return InlineKeyboardMarkup(
+        inline_keyboard=[[InlineKeyboardButton(text=f"👤 Исполнитель: {label}", url=url)]],
     )

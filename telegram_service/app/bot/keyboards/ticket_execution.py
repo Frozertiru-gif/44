@@ -71,7 +71,10 @@ def transfer_confirm_keyboard(ticket_id: int) -> InlineKeyboardMarkup:
     )
 
 
-def close_photo_skip_keyboard() -> InlineKeyboardMarkup:
+def close_photo_actions_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="⏭ Пропустить", callback_data="close_photo_skip")]]
+        inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Готово", callback_data="close_photo_done")],
+            [InlineKeyboardButton(text="↩️ Пропустить", callback_data="close_photo_skip")],
+        ]
     )

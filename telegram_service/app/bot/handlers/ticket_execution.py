@@ -5,7 +5,7 @@ from math import ceil
 
 from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InputMediaPhoto, Message
 
 from app.bot.handlers.permissions import MASTER_ROLES, TRANSFER_CONFIRM_ROLES
 from app.bot.handlers.utils import (
@@ -24,7 +24,7 @@ from app.bot.keyboards.ticket_execution import (
     active_ticket_actions,
     close_junior_keyboard,
     close_confirm_keyboard,
-    close_photo_skip_keyboard,
+    close_photo_actions_keyboard,
     closed_ticket_actions,
     queue_ticket_actions,
     transfer_approval_actions,
@@ -354,7 +354,12 @@ async def close_start(callback: CallbackQuery, state: FSMContext) -> None:
             return
 
     await state.clear()
-    await state.update_data(ticket_id=ticket_id, executor_id=ticket.assigned_executor_id)
+    await state.update_data(
+        ticket_id=ticket_id,
+        executor_id=ticket.assigned_executor_id,
+        close_photos=[],
+        close_photo_unique_ids=[],
+    )
     await state.set_state(TicketCloseStates.revenue)
     await callback.message.answer("Введите доход по заказу:")
     await callback.answer()
@@ -468,14 +473,20 @@ async def close_comment(message: Message, state: FSMContext) -> None:
     await state.update_data(closed_comment=comment)
     await state.set_state(TicketCloseStates.photo)
     await message.answer(
-        "Отправьте фото (по желанию) или нажмите «Пропустить».",
-        reply_markup=close_photo_skip_keyboard(),
+        "Отправьте фото (можно несколько). Когда закончите — нажмите «Готово». Можно пропустить.",
+        reply_markup=close_photo_actions_keyboard(),
     )
 
 
 @router.callback_query(TicketCloseStates.photo, F.data == "close_photo_skip")
 async def close_photo_skip(callback: CallbackQuery, state: FSMContext) -> None:
-    await state.update_data(closed_photo_file_id=None)
+    await state.update_data(close_photos=[], close_photo_unique_ids=[])
+    await _send_close_confirmation(callback.message, state)
+    await callback.answer()
+
+
+@router.callback_query(TicketCloseStates.photo, F.data == "close_photo_done")
+async def close_photo_done(callback: CallbackQuery, state: FSMContext) -> None:
     await _send_close_confirmation(callback.message, state)
     await callback.answer()
 
@@ -484,25 +495,61 @@ async def close_photo_skip(callback: CallbackQuery, state: FSMContext) -> None:
 async def close_photo_from_photo(message: Message, state: FSMContext) -> None:
     photo = message.photo[-1] if message.photo else None
     if not photo:
-        await message.answer("Не удалось получить фото. Попробуйте ещё раз или нажмите «Пропустить».")
+        await message.answer("Не удалось получить фото. Попробуйте ещё раз или нажмите «Готово».")
         return
-    await state.update_data(closed_photo_file_id=photo.file_id)
-    await _send_close_confirmation(message, state)
+    await _append_close_photo(
+        message,
+        state,
+        file_id=photo.file_id,
+        file_unique_id=getattr(photo, "file_unique_id", None),
+    )
 
 
 @router.message(TicketCloseStates.photo, F.document)
 async def close_photo_from_document(message: Message, state: FSMContext) -> None:
     doc = message.document
     if not doc or not (doc.mime_type or "").startswith("image/"):
-        await message.answer("Нужен файл изображения. Отправьте фото или нажмите «Пропустить».")
+        await message.answer("Нужен файл изображения. Отправьте фото или нажмите «Готово».")
         return
-    await state.update_data(closed_photo_file_id=doc.file_id)
-    await _send_close_confirmation(message, state)
+    await _append_close_photo(
+        message,
+        state,
+        file_id=doc.file_id,
+        file_unique_id=getattr(doc, "file_unique_id", None),
+    )
 
 
 @router.message(TicketCloseStates.photo)
 async def close_photo_invalid(message: Message) -> None:
-    await message.answer("Отправьте фото/изображение или нажмите «Пропустить».")
+    await message.answer("Отправьте фото/изображение или нажмите «Готово»/«Пропустить».")
+
+
+async def _append_close_photo(message: Message, state: FSMContext, *, file_id: str, file_unique_id: str | None) -> None:
+    data = await state.get_data()
+    photos = data.get("close_photos")
+    unique_ids = data.get("close_photo_unique_ids")
+    if not isinstance(photos, list):
+        photos = []
+    if not isinstance(unique_ids, list):
+        unique_ids = []
+
+    limit = max(1, settings.close_photo_limit)
+    if len(photos) >= limit:
+        await message.answer(f"Слишком много фото. Максимум: {limit}.")
+        return
+
+    if file_unique_id and file_unique_id in unique_ids:
+        return
+
+    photos.append({"file_id": file_id, "file_unique_id": file_unique_id})
+    if file_unique_id:
+        unique_ids.append(file_unique_id)
+
+    await state.update_data(close_photos=photos, close_photo_unique_ids=unique_ids)
+    await message.answer(
+        f"Фото добавлено ({len(photos)}). Отправьте ещё или нажмите «Готово».",
+        reply_markup=close_photo_actions_keyboard(),
+    )
 
 
 async def _send_close_confirmation(message: Message, state: FSMContext) -> None:
@@ -512,13 +559,14 @@ async def _send_close_confirmation(message: Message, state: FSMContext) -> None:
     net_profit = data.get("net_profit")
     junior_label = data.get("junior_label") or "Без младшего мастера"
     comment = data.get("closed_comment")
-    photo_file_id = data.get("closed_photo_file_id")
+    photos = data.get("close_photos")
+    photo_count = len(photos) if isinstance(photos, list) else 0
     await state.set_state(TicketCloseStates.confirm)
     await message.answer(
         f"Доход: {revenue}\nРасход: {expense}\nЧистая прибыль: {net_profit}\n"
         f"Младший мастер: {junior_label}\n"
         f"Комментарий: {comment}\n"
-        f"Фото: {'добавлено' if photo_file_id else 'нет'}\n\n"
+        f"Фото: {photo_count}\n\n"
         "Вы уверены? Это действие нельзя отменить.",
         reply_markup=close_confirm_keyboard(),
     )
@@ -533,7 +581,9 @@ async def close_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
     junior_master_id = data.get("junior_master_id")
     junior_master_percent = data.get("junior_master_percent")
     closed_comment = data.get("closed_comment")
-    closed_photo_file_id = data.get("closed_photo_file_id")
+    close_photos = data.get("close_photos")
+    if not isinstance(close_photos, list):
+        close_photos = []
     if (
         not isinstance(ticket_id, int)
         or not isinstance(revenue, Decimal)
@@ -577,7 +627,7 @@ async def close_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
             junior_master_id=junior_master_id,
             junior_master_percent=junior_master_percent,
             closed_comment=closed_comment,
-            closed_photo_file_id=closed_photo_file_id,
+            close_photos=close_photos,
             allow_override=user.role in {UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN},
         )
 
@@ -594,8 +644,18 @@ async def close_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
     await callback.message.answer(format_ticket_card(ticket), reply_markup=await build_main_menu(user.role))
     await bot.send_message(events_chat_id, format_ticket_event_closed(ticket))
     report_text = format_closed_report(ticket)
-    if ticket.closed_photo_file_id:
-        await bot.send_photo(closed_report_chat_id, ticket.closed_photo_file_id, caption=report_text)
+    async with async_session_factory() as session:
+        stored_photos = await ticket_service.get_close_photos(session, ticket.id)
+    photo_file_ids = [item.file_id for item in stored_photos]
+    if not photo_file_ids and ticket.closed_photo_file_id:
+        photo_file_ids = [ticket.closed_photo_file_id]
+
+    if photo_file_ids:
+        media = [InputMediaPhoto(media=file_id) for file_id in photo_file_ids]
+        media[0].caption = report_text
+        await bot.send_media_group(closed_report_chat_id, media)
+        if len(report_text) > 1024:
+            await bot.send_message(closed_report_chat_id, report_text)
     else:
         await bot.send_message(closed_report_chat_id, report_text)
     await callback.answer()

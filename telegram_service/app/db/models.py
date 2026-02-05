@@ -87,6 +87,24 @@ class Ticket(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     events = relationship("TicketEvent", back_populates="ticket")
+    close_photos = relationship(
+        "TicketClosePhoto",
+        back_populates="ticket",
+        cascade="all, delete-orphan",
+        order_by="TicketClosePhoto.id",
+    )
+
+
+class TicketClosePhoto(Base):
+    __tablename__ = "ticket_close_photos"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("tickets.id"), nullable=False, index=True)
+    file_id: Mapped[str] = mapped_column(Text, nullable=False)
+    file_unique_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    ticket = relationship("Ticket", back_populates="close_photos")
 
 
 class Lead(Base):

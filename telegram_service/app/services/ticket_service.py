@@ -16,6 +16,14 @@ from app.domain.enums_mapping import parse_ad_source, parse_ticket_category
 
 
 class TicketService:
+    ACTIVE_LIST_STATUSES = (
+        TicketStatus.READY_FOR_WORK,
+        TicketStatus.IN_WORK,
+        TicketStatus.TAKEN,
+        TicketStatus.IN_PROGRESS,
+        TicketStatus.WAITING,
+    )
+
     def __init__(self) -> None:
         self._audit = AuditService()
         self._money_round = Decimal("0.01")
@@ -97,7 +105,7 @@ class TicketService:
     async def list_active(self, session: AsyncSession, limit: int = 20) -> list[Ticket]:
         result = await session.execute(
             select(Ticket)
-            .where(Ticket.status != TicketStatus.CANCELLED)
+            .where(Ticket.status.in_(self.ACTIVE_LIST_STATUSES))
             .order_by(Ticket.id.desc())
             .limit(limit)
         )
@@ -758,7 +766,7 @@ class TicketService:
     @staticmethod
     def _apply_filter_key(query, filter_key: str):
         if filter_key == "active":
-            return query.where(Ticket.status != TicketStatus.CANCELLED)
+            return query.where(Ticket.status.in_(TicketService.ACTIVE_LIST_STATUSES))
         if filter_key == "repeat":
             return query.where(Ticket.is_repeat.is_(True))
         return query

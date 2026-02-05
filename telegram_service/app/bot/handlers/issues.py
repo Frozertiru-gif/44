@@ -3,6 +3,7 @@ from __future__ import annotations
 from aiogram import F, Router
 from aiogram.types import Message
 
+from app.bot.handlers.utils import ticket_display_id
 from app.db.enums import TransferStatus, UserRole
 from app.db.session import async_session_factory
 from app.services.audit_service import AuditService
@@ -52,14 +53,14 @@ async def issues_dashboard(message: Message) -> None:
         lines.append(f"\n🔔 Закрытые без подтверждения перевода > {pending_days} дн.")
         for ticket in overdue:
             status = ticket.transfer_status.value if ticket.transfer_status else TransferStatus.NOT_SENT.value
-            lines.append(f"- #{ticket.id} статус перевода: {status}")
+            lines.append(f"- #{ticket_display_id(ticket)} статус перевода: {status}")
     else:
         lines.append(f"\n🔔 Нет просроченных подтверждений (> {pending_days} дн.)")
 
     if zero_profit:
         lines.append("\n⚠️ Заказы с нулевой прибылью")
         for ticket in zero_profit:
-            lines.append(f"- #{ticket.id} клиент: {ticket.client_phone}")
+            lines.append(f"- #{ticket_display_id(ticket)} клиент: {ticket.client_phone}")
     else:
         lines.append("\n⚠️ Заказов с нулевой прибылью нет")
 

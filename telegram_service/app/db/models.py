@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from uuid import UUID as UUIDType
 from decimal import Decimal
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Enum, ForeignKey, Index, JSON, Numeric, String, Text, text
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Enum, ForeignKey, Index, JSON, Numeric, String, Text, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship, synonym
 
@@ -36,6 +36,7 @@ class Ticket(Base):
     __tablename__ = "tickets"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    public_id: Mapped[str] = mapped_column(String(8), nullable=False, unique=True, index=True)
     status: Mapped[TicketStatus] = mapped_column(Enum(TicketStatus, name="ticket_status"))
     category: Mapped[TicketCategory] = mapped_column(Enum(TicketCategory, name="ticket_category"))
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -58,6 +59,9 @@ class Ticket(Base):
     assigned_worker_id: Mapped[int | None] = synonym("assigned_executor_id")
     taken_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     closed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    closed_by_user_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("users.id"), nullable=True)
+    closed_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    closed_photo_file_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     revenue: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     expense: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     net_profit: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
@@ -76,6 +80,7 @@ class Ticket(Base):
     admin_earned_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     project_take_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     transfer_confirmer = relationship("User", foreign_keys=[transfer_confirmed_by])
+    closed_by_user = relationship("User", foreign_keys=[closed_by_user_id])
     junior_master = relationship("User", foreign_keys=[junior_master_id])
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
@@ -112,6 +117,13 @@ class Lead(Base):
     converted_ticket_id: Mapped[int | None] = mapped_column(BigInteger, ForeignKey("tickets.id"), nullable=True)
 
     converted_ticket = relationship("Ticket", foreign_keys=[converted_ticket_id])
+
+
+class DailyCounter(Base):
+    __tablename__ = "daily_counters"
+
+    counter_date: Mapped[date] = mapped_column(Date, primary_key=True)
+    counter: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
 class MasterJuniorLink(Base):

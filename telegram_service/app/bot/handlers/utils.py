@@ -47,6 +47,18 @@ def parse_time(value: str, target_date: date) -> datetime | None:
         return None
 
 
+
+
+def ticket_display_id(ticket: Ticket) -> str:
+    return ticket.public_id or str(ticket.id)
+
+
+def ticket_link_or_label(user: User | None) -> str:
+    label, url = format_executor_link(user)
+    if not url:
+        return label
+    return f"{label} ({url})"
+
 def format_ticket_schedule(preferred_date_dm: str | None, scheduled_at: datetime | None) -> str:
     if scheduled_at:
         date_part = preferred_date_dm or scheduled_at.strftime("%d.%m")
@@ -71,7 +83,7 @@ def format_ticket_card(ticket: Ticket) -> str:
     transfer = format_transfer_label(ticket)
     finance = format_finance_block(ticket)
     return (
-        f"{repeat_label}Заказ #{ticket.id}\n"
+        f"{repeat_label}Заказ #{ticket_display_id(ticket)}\n"
         f"Категория: {ticket_category_label(ticket.category)}\n"
         f"Телефон: {ticket.client_phone}\n"
         f"Адрес: {ticket.client_address or '-'}\n"
@@ -100,7 +112,7 @@ def format_ticket_public(ticket: Ticket) -> str:
     ad = ad_source_label(ticket.ad_source)
     status = ticket.status.value if ticket.status else "-"
     return (
-        f"{repeat_label}Заказ #{ticket.id}\n"
+        f"{repeat_label}Заказ #{ticket_display_id(ticket)}\n"
         f"Категория: {ticket_category_label(ticket.category)}\n"
         f"Удобное время: {scheduled}\n"
         f"Клиент: {client_line}\n"
@@ -144,7 +156,7 @@ def format_ticket_list(tickets: Iterable[Ticket]) -> str:
     for ticket in tickets:
         marker = "⚠️" if ticket.is_repeat else ""
         status = "" if ticket.status == TicketStatus.READY_FOR_WORK else f" ({ticket.status.value})"
-        lines.append(f"#{ticket.id} {ticket_category_label(ticket.category)} {ticket.client_phone} {marker}{status}")
+        lines.append(f"#{ticket_display_id(ticket)} {ticket_category_label(ticket.category)} {ticket.client_phone} {marker}{status}")
     return "\n".join(lines) if lines else "Нет заказов."
 
 
@@ -198,13 +210,13 @@ def format_executor_link(user: User | None) -> tuple[str, str | None]:
 def format_ticket_event_taken(ticket: Ticket) -> str:
     executor_label, executor_url = format_executor_link(ticket.assigned_executor)
     executor_value = f"{executor_label} ({executor_url})" if executor_url else executor_label
-    return f"✅ Заявка #{ticket.id} принята: исполнитель — {executor_value}"
+    return f"✅ Заявка #{ticket_display_id(ticket)} принята: исполнитель — {executor_value}"
 
 
 def format_ticket_event_status(ticket: Ticket) -> str:
     executor_label, executor_url = format_executor_link(ticket.assigned_executor)
     executor_value = f"{executor_label} ({executor_url})" if executor_url else executor_label
-    return f"🛠 Заявка #{ticket.id} статус: {ticket.status.value} (исполнитель — {executor_value})"
+    return f"🛠 Заявка #{ticket_display_id(ticket)} статус: {ticket.status.value} (исполнитель — {executor_value})"
 
 
 def format_ticket_event_closed(ticket: Ticket) -> str:
@@ -214,18 +226,18 @@ def format_ticket_event_closed(ticket: Ticket) -> str:
     executor_label, executor_url = format_executor_link(ticket.assigned_executor)
     executor_value = f"{executor_label} ({executor_url})" if executor_url else executor_label
     return (
-        f"📦 Заявка #{ticket.id} закрыта: доход={revenue}, расход={expense}, чистая={profit} "
+        f"📦 Заявка #{ticket_display_id(ticket)} закрыта: доход={revenue}, расход={expense}, чистая={profit} "
         f"(исполнитель — {executor_value})"
     )
 
 
 def format_ticket_event_transfer(ticket: Ticket) -> str:
     status = ticket.transfer_status.value if ticket.transfer_status else "-"
-    return f"💸 Заявка #{ticket.id} перевод: {status}"
+    return f"💸 Заявка #{ticket_display_id(ticket)} перевод: {status}"
 
 
 def format_ticket_event_cancelled(ticket: Ticket) -> str:
-    return f"❌ Заявка #{ticket.id} отменена"
+    return f"❌ Заявка #{ticket_display_id(ticket)} отменена"
 
 
 def format_executor_label(ticket: Ticket) -> str:
@@ -268,7 +280,7 @@ def format_ticket_queue_card(ticket: Ticket) -> str:
     if len(problem) > 60:
         problem = f"{problem[:57]}..."
     return (
-        f"{repeat_label}Заказ #{ticket.id}\n"
+        f"{repeat_label}Заказ #{ticket_display_id(ticket)}\n"
         f"Категория: {ticket_category_label(ticket.category)}\n"
         f"Телефон: {ticket.client_phone}\n"
         f"Адрес: {ticket.client_address or '-'}\n"
@@ -291,10 +303,33 @@ def format_order_report(ticket: Ticket) -> str:
     expense = ticket.expense if ticket.expense is not None else "-"
     profit = ticket.net_profit if ticket.net_profit is not None else "-"
     return (
-        f"Номер заказа: {ticket.id}\n"
+        f"Номер заказа: {ticket_display_id(ticket)}\n"
         f"Кто выполнил: {executor_label}\n"
         f"Тип рекламы: {ad_source}\n"
         f"Скок отдал клиент: {revenue}\n"
         f"Расходы: {expense}\n"
         f"Чистый профит: {profit}"
+    )
+
+
+def format_closed_report(ticket: Ticket) -> str:
+    closed_at = ticket.closed_at.strftime("%d.%m.%Y %H:%M") if ticket.closed_at else "-"
+    revenue = ticket.revenue if ticket.revenue is not None else "-"
+    expense = ticket.expense if ticket.expense is not None else "-"
+    profit = ticket.net_profit if ticket.net_profit is not None else "-"
+    closer = ticket_link_or_label(ticket.closed_by_user or ticket.assigned_executor)
+    comment = ticket.closed_comment or "-"
+    return (
+        f"✅ Закрытая заявка #{ticket_display_id(ticket)}\n"
+        f"Категория: {ticket_category_label(ticket.category)}\n"
+        f"Клиент: {ticket.client_name or '-'}\n"
+        f"Телефон: {ticket.client_phone}\n"
+        f"Адрес: {ticket.client_address or '-'}\n"
+        f"Проблема: {ticket.problem_text}\n"
+        f"Кто закрыл: {closer}\n"
+        f"Доход: {revenue}\n"
+        f"Расход: {expense}\n"
+        f"Чистая: {profit}\n"
+        f"Комментарий: {comment}\n"
+        f"Закрыто: {closed_at}"
     )

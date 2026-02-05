@@ -16,12 +16,15 @@ from app.bot.handlers.utils import (
     format_ticket_event_taken,
     format_ticket_event_transfer,
     format_ticket_queue_card,
+    format_closed_report,
+    ticket_display_id,
 )
 from app.bot.keyboards.main_menu import build_main_menu
 from app.bot.keyboards.ticket_execution import (
     active_ticket_actions,
     close_junior_keyboard,
     close_confirm_keyboard,
+    close_photo_skip_keyboard,
     closed_ticket_actions,
     queue_ticket_actions,
     transfer_approval_actions,
@@ -446,15 +449,79 @@ async def close_select_junior(callback: CallbackQuery, state: FSMContext) -> Non
         junior = link.junior_master
         junior_label = junior.display_name if junior else f"ID {junior_id}"
 
-    await state.update_data(junior_master_id=junior_id, junior_master_percent=junior_percent)
-    await state.set_state(TicketCloseStates.confirm)
+    await state.update_data(junior_master_id=junior_id, junior_master_percent=junior_percent, junior_label=junior_label)
+    await state.set_state(TicketCloseStates.comment)
     await callback.message.answer(
         f"Доход: {revenue}\nРасход: {expense}\nЧистая прибыль: {net_profit}\n"
         f"Младший мастер: {junior_label}\n\n"
+        "Введите комментарий по закрытию (обязательно, можно написать '-' или 'без комментария')."
+    )
+    await callback.answer()
+
+
+@router.message(TicketCloseStates.comment)
+async def close_comment(message: Message, state: FSMContext) -> None:
+    comment = (message.text or "").strip()
+    if not comment:
+        await message.answer("Комментарий обязателен. Введите текст или '-' .")
+        return
+    await state.update_data(closed_comment=comment)
+    await state.set_state(TicketCloseStates.photo)
+    await message.answer(
+        "Отправьте фото (по желанию) или нажмите «Пропустить».",
+        reply_markup=close_photo_skip_keyboard(),
+    )
+
+
+@router.callback_query(TicketCloseStates.photo, F.data == "close_photo_skip")
+async def close_photo_skip(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.update_data(closed_photo_file_id=None)
+    await _send_close_confirmation(callback.message, state)
+    await callback.answer()
+
+
+@router.message(TicketCloseStates.photo, F.photo)
+async def close_photo_from_photo(message: Message, state: FSMContext) -> None:
+    photo = message.photo[-1] if message.photo else None
+    if not photo:
+        await message.answer("Не удалось получить фото. Попробуйте ещё раз или нажмите «Пропустить».")
+        return
+    await state.update_data(closed_photo_file_id=photo.file_id)
+    await _send_close_confirmation(message, state)
+
+
+@router.message(TicketCloseStates.photo, F.document)
+async def close_photo_from_document(message: Message, state: FSMContext) -> None:
+    doc = message.document
+    if not doc or not (doc.mime_type or "").startswith("image/"):
+        await message.answer("Нужен файл изображения. Отправьте фото или нажмите «Пропустить».")
+        return
+    await state.update_data(closed_photo_file_id=doc.file_id)
+    await _send_close_confirmation(message, state)
+
+
+@router.message(TicketCloseStates.photo)
+async def close_photo_invalid(message: Message) -> None:
+    await message.answer("Отправьте фото/изображение или нажмите «Пропустить».")
+
+
+async def _send_close_confirmation(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    revenue = data.get("revenue")
+    expense = data.get("expense")
+    net_profit = data.get("net_profit")
+    junior_label = data.get("junior_label") or "Без младшего мастера"
+    comment = data.get("closed_comment")
+    photo_file_id = data.get("closed_photo_file_id")
+    await state.set_state(TicketCloseStates.confirm)
+    await message.answer(
+        f"Доход: {revenue}\nРасход: {expense}\nЧистая прибыль: {net_profit}\n"
+        f"Младший мастер: {junior_label}\n"
+        f"Комментарий: {comment}\n"
+        f"Фото: {'добавлено' if photo_file_id else 'нет'}\n\n"
         "Вы уверены? Это действие нельзя отменить.",
         reply_markup=close_confirm_keyboard(),
     )
-    await callback.answer()
 
 
 @router.callback_query(F.data == "close_confirm")
@@ -465,11 +532,19 @@ async def close_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
     expense = data.get("expense")
     junior_master_id = data.get("junior_master_id")
     junior_master_percent = data.get("junior_master_percent")
-    if not isinstance(ticket_id, int) or not isinstance(revenue, Decimal) or not isinstance(expense, Decimal):
+    closed_comment = data.get("closed_comment")
+    closed_photo_file_id = data.get("closed_photo_file_id")
+    if (
+        not isinstance(ticket_id, int)
+        or not isinstance(revenue, Decimal)
+        or not isinstance(expense, Decimal)
+        or not isinstance(closed_comment, str)
+    ):
         await callback.answer("Сессия закрытия устарела", show_alert=True)
         await state.clear()
         return
     events_chat_id = settings.events_chat_id
+    closed_report_chat_id = settings.closed_report_chat_id
 
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
@@ -501,6 +576,8 @@ async def close_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
             expense=expense,
             junior_master_id=junior_master_id,
             junior_master_percent=junior_master_percent,
+            closed_comment=closed_comment,
+            closed_photo_file_id=closed_photo_file_id,
             allow_override=user.role in {UserRole.SUPER_ADMIN, UserRole.SYS_ADMIN},
         )
 
@@ -516,6 +593,11 @@ async def close_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) ->
     await callback.message.answer("Заказ закрыт.")
     await callback.message.answer(format_ticket_card(ticket), reply_markup=await build_main_menu(user.role))
     await bot.send_message(events_chat_id, format_ticket_event_closed(ticket))
+    report_text = format_closed_report(ticket)
+    if ticket.closed_photo_file_id:
+        await bot.send_photo(closed_report_chat_id, ticket.closed_photo_file_id, caption=report_text)
+    else:
+        await bot.send_message(closed_report_chat_id, report_text)
     await callback.answer()
 
 
@@ -594,7 +676,7 @@ async def transfer_confirmations(message: Message) -> None:
         net_profit = ticket.net_profit if ticket.net_profit is not None else "-"
         sent_at = ticket.transfer_sent_at.strftime("%Y-%m-%d %H:%M") if ticket.transfer_sent_at else "-"
         text = (
-            f"Заказ #{ticket.id}\n"
+            f"Заказ #{ticket_display_id(ticket)}\n"
             f"Исполнитель: {executor_label}\n"
             f"Сумма к переводу: {net_profit}\n"
             f"Перевёл: {sent_at}"
@@ -708,7 +790,7 @@ def _render_worker_closed_list(tickets, *, total: int, page: int, page_size: int
         date_value = closed_at.strftime("%d.%m.%Y") if closed_at else "-"
         client_label = ticket.client_name or "-"
         category = ticket_category_label(ticket.category)
-        lines.append(f"#{ticket.id} • {date_value} • {category} • {client_label}")
+        lines.append(f"#{ticket_display_id(ticket)} • {date_value} • {category} • {client_label}")
     return "\n".join(lines)
 
 

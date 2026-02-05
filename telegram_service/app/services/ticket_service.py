@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
 from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.enums import AdSource, TicketCategory, TicketStatus, TransferStatus, UserRole
-from app.db.models import Ticket, User
+from app.db.models import DailyCounter, Ticket, User
 from app.services.audit_service import AuditService
 from app.domain.enums_mapping import parse_ad_source, parse_ticket_category
 
@@ -59,7 +60,13 @@ class TicketService:
             return None
         normalized_category = parse_ticket_category(category)
         normalized_ad_source = parse_ad_source(ad_source)
+        now = datetime.utcnow()
+        try:
+            public_id = await self._generate_ticket_public_id(session, now)
+        except ValueError:
+            return None
         ticket = Ticket(
+            public_id=public_id,
             status=TicketStatus.READY_FOR_WORK,
             category=normalized_category,
             scheduled_at=scheduled_at,
@@ -74,6 +81,8 @@ class TicketService:
             is_repeat=is_repeat,
             repeat_ticket_ids=repeat_ticket_ids,
             created_by_admin_id=created_by_admin_id,
+            created_at=now,
+            updated_at=now,
         )
         session.add(ticket)
         await session.flush()
@@ -162,7 +171,7 @@ class TicketService:
     async def get_ticket(self, session: AsyncSession, ticket_id: int) -> Ticket | None:
         result = await session.execute(
             select(Ticket)
-            .options(selectinload(Ticket.assigned_executor), selectinload(Ticket.junior_master))
+            .options(selectinload(Ticket.assigned_executor), selectinload(Ticket.junior_master), selectinload(Ticket.closed_by_user))
             .where(Ticket.id == ticket_id)
         )
         return result.scalar_one_or_none()
@@ -287,6 +296,8 @@ class TicketService:
         expense: Decimal,
         junior_master_id: int | None,
         junior_master_percent: Decimal | None,
+        closed_comment: str,
+        closed_photo_file_id: str | None,
         allow_override: bool = False,
     ) -> Ticket | None:
         """Freeze financial totals and payouts to ensure later disputes have a stable ledger."""
@@ -364,6 +375,9 @@ class TicketService:
             query.values(
                 status=TicketStatus.CLOSED,
                 closed_at=now,
+                closed_by_user_id=actor_id,
+                closed_comment=closed_comment,
+                closed_photo_file_id=closed_photo_file_id,
                 revenue=revenue,
                 expense=expense,
                 net_profit=payouts["net_profit"],
@@ -404,6 +418,8 @@ class TicketService:
                     "junior_master_percent": float(junior_master_percent)
                     if junior_master_percent is not None
                     else None,
+                    "closed_comment": closed_comment,
+                    "has_close_photo": bool(closed_photo_file_id),
                 },
             )
             await self._audit.log_event(
@@ -522,7 +538,7 @@ class TicketService:
     async def get_ticket_with_executor(self, session: AsyncSession, ticket_id: int) -> Ticket | None:
         result = await session.execute(
             select(Ticket)
-            .options(selectinload(Ticket.assigned_executor), selectinload(Ticket.junior_master))
+            .options(selectinload(Ticket.assigned_executor), selectinload(Ticket.junior_master), selectinload(Ticket.closed_by_user))
             .where(Ticket.id == ticket_id)
         )
         return result.scalar_one_or_none()
@@ -537,7 +553,7 @@ class TicketService:
     ) -> list[Ticket]:
         result = await session.execute(
             select(Ticket)
-            .options(selectinload(Ticket.assigned_executor), selectinload(Ticket.junior_master))
+            .options(selectinload(Ticket.assigned_executor), selectinload(Ticket.junior_master), selectinload(Ticket.closed_by_user))
             .where(Ticket.assigned_executor_id == master_id, Ticket.status.in_(statuses))
             .order_by(Ticket.id.desc())
             .limit(limit)
@@ -598,6 +614,7 @@ class TicketService:
         actor: User,
         *,
         ticket_id: int | None = None,
+        public_id: str | None = None,
         phone_digits: str | None = None,
         page: int,
         page_size: int,
@@ -609,6 +626,8 @@ class TicketService:
         filters = []
         if ticket_id is not None:
             filters.append(Ticket.id == ticket_id)
+        elif public_id:
+            filters.append(Ticket.public_id == public_id)
         elif phone_digits:
             phone_expr = func.regexp_replace(Ticket.client_phone, r"\D", "", "g")
             filters.append(phone_expr.ilike(f"%{phone_digits}%"))
@@ -623,6 +642,26 @@ class TicketService:
             base_query.where(*filters).offset(page * page_size).limit(page_size)
         )
         return list(result.scalars().all()), total
+
+    async def _generate_ticket_public_id(self, session: AsyncSession, created_at: datetime) -> str:
+        counter_day = created_at.date()
+        seq_value = await self._next_daily_counter(session, counter_day)
+        if seq_value > 99:
+            raise ValueError(f"Превышен лимит заявок на дату {counter_day.isoformat()} (максимум 99)")
+        return f"{counter_day.strftime('%d%m%y')}{seq_value:02d}"
+
+    async def _next_daily_counter(self, session: AsyncSession, counter_day: date) -> int:
+        statement = (
+            pg_insert(DailyCounter)
+            .values(counter_date=counter_day, counter=1)
+            .on_conflict_do_update(
+                index_elements=[DailyCounter.counter_date],
+                set_={"counter": DailyCounter.counter + 1},
+            )
+            .returning(DailyCounter.counter)
+        )
+        result = await session.execute(statement)
+        return int(result.scalar_one())
 
     async def _get_user_percent(self, session: AsyncSession, user_id: int, *, field: str) -> Decimal:
         result = await session.execute(select(User).where(User.id == user_id))

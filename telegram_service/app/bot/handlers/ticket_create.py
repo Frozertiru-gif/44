@@ -17,6 +17,7 @@ from app.bot.handlers.utils import (
     is_valid_phone,
     normalize_phone,
     parse_time,
+    ticket_display_id,
 )
 from app.bot.keyboards.main_menu import build_main_menu
 from app.bot.keyboards.request_chat import request_chat_keyboard
@@ -418,7 +419,7 @@ async def ticket_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) -
             reply_markup=None,
         )
 
-    await callback.message.answer(f"Заказ #{ticket.id} создан.", reply_markup=await build_main_menu(user.role))
+    await callback.message.answer(f"Заказ #{ticket_display_id(ticket)} создан.", reply_markup=await build_main_menu(user.role))
     await state.clear()
     await callback.answer()
 

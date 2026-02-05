@@ -5,6 +5,7 @@ class TicketCreateStates(StatesGroup):
     category = State()
     phone = State()
     client_address = State()
+    address_details = State()
     repeat_confirm = State()
     schedule_choice = State()
     schedule_time = State()

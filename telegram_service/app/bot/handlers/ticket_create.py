@@ -25,6 +25,7 @@ from app.bot.keyboards.ticket_wizard import (
     ad_source_keyboard,
     age_keyboard,
     category_keyboard,
+    address_details_keyboard,
     confirm_keyboard,
     name_keyboard,
     repeat_warning_keyboard,
@@ -91,6 +92,13 @@ async def _advance_after_phone(message: Message, state: FSMContext) -> None:
     if not _is_value_set(data, "client_address"):
         await state.set_state(TicketCreateStates.client_address)
         await message.answer("Введите адрес клиента:")
+        return
+    if "address_details" not in data:
+        await state.set_state(TicketCreateStates.address_details)
+        await message.answer(
+            'Введите "квартира / подъезд / этаж" (можно одной строкой). Например: "кв 12, подъезд 2, этаж 5".',
+            reply_markup=await address_details_keyboard(),
+        )
         return
     if data.get("scheduled_at") is None and not _is_value_set(data, "preferred_date_dm"):
         await state.set_state(TicketCreateStates.schedule_choice)
@@ -177,6 +185,18 @@ async def ticket_client_address(message: Message, state: FSMContext) -> None:
         await message.answer("Введите адрес клиента (не менее 5 символов).")
         return
     await state.update_data(client_address=text)
+    await _advance_after_phone(message, state)
+
+
+@router.message(TicketCreateStates.address_details)
+async def ticket_address_details(message: Message, state: FSMContext) -> None:
+    text = (message.text or "").strip()
+    details = None if text in {"Пропустить", "-"} else text
+    if details is not None and len(details) < 2:
+        await message.answer('Введите минимум 2 символа или нажмите "Пропустить".')
+        return
+
+    await state.update_data(address_details=details)
     await _advance_after_phone(message, state)
 
 
@@ -372,6 +392,7 @@ async def ticket_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) -
             client_age_estimate=data.get("client_age_estimate"),
             client_phone=data["client_phone"],
             client_address=client_address,
+            address_details=data.get("address_details"),
             problem_text=data["problem_text"],
             special_note=data.get("special_note"),
             ad_source=data.get("ad_source", AdSource.UNKNOWN),

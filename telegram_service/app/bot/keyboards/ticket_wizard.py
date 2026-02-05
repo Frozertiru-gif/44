@@ -32,6 +32,10 @@ async def schedule_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
+async def address_details_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="Пропустить")]], resize_keyboard=True)
+
+
 async def name_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=[[KeyboardButton(text="Пропустить")]], resize_keyboard=True)
 

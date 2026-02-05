@@ -75,6 +75,12 @@ header {
   color: var(--muted);
 }
 
+@media (min-width: 640px) {
+  .services-grid ul {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (min-width: 900px) {
   .nav-links {
     display: flex;
@@ -469,6 +475,52 @@ header {
   font-weight: 600;
 }
 
+
+.services-grid {
+  margin: 22px 0;
+}
+
+.services-grid h3 {
+  margin: 0 0 12px;
+  font-size: clamp(18px, 2.4vw, 22px);
+}
+
+.services-grid ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.services-grid li {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 14px 16px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--text);
+  font-weight: 500;
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.services-grid li:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(20, 20, 20, 0.08);
+}
+
+.services-grid-marker {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  margin-top: 6px;
+  flex-shrink: 0;
+}
+
 .footer {
   padding: 24px 0 80px;
   color: var(--muted);
@@ -476,6 +528,10 @@ header {
 }
 
 @media (min-width: 900px) {
+  .services-grid ul {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .hero {
     grid-template-columns: 1.2fr 0.8fr;
   }

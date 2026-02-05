@@ -18,7 +18,7 @@ from app.bot.states.finance import FinanceStates
 from app.core.config import get_settings
 from app.db.enums import ProjectTransactionType, UserRole, ticket_category_label
 from app.domain.enums_mapping import ad_source_label
-from app.db.models import User
+from app.db.models import ProjectTransaction, User
 from app.db.session import async_session_factory
 from app.services.audit_service import AuditService
 from app.services.finance_service import FinanceService
@@ -701,7 +701,6 @@ async def _handle_flow(
             transactions = await finance_service.list_manual_transactions(session, date_range=date_range)
             summary = await finance_service.project_summary(session, date_range=date_range)
             shares = await finance_service.list_active_shares(session)
-            operations = await finance_service.list_ticket_money_operations(session, date_range=date_range)
             user_map = await _build_user_map(session, tickets, transactions)
             content = _build_excel_report(
                 tickets=tickets,
@@ -711,7 +710,7 @@ async def _handle_flow(
                 date_range=date_range,
                 user_map=user_map,
             )
-            ops_content = _build_money_operations_xlsx(operations=operations)
+            ops_content = _build_money_operations_xlsx(transactions=transactions)
             stamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
             filename = f"project_report_{stamp}.xlsx"
             ops_filename = f"money_ops_{stamp}.xlsx"
@@ -968,29 +967,26 @@ def _build_excel_report(*, tickets, transactions, summary, shares, date_range, u
     return output
 
 
-def _build_money_operations_xlsx(*, operations) -> BytesIO:
+def _build_money_operations_xlsx(*, transactions: list[ProjectTransaction]) -> BytesIO:
     workbook = Workbook()
     ws = workbook.active
     ws.title = "Операции"
     ws.append(["Дата добавления", "Категория", "Комментарий", "Сумма", "Тип"])
 
-    for op in operations:
-        ticket = op.ticket
-        comment = op.comment
-        if not comment and ticket is not None:
-            comment = ticket.closed_comment
+    for tx in transactions:
+        comment = tx.comment if tx.comment else "-"
         ws.append(
             [
-                op.created_at,
-                op.category_snapshot,
+                tx.created_at,
+                tx.category,
                 comment,
-                op.amount,
-                op.op_type.value,
+                tx.amount,
+                tx.type.value,
             ]
         )
 
     for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
-        row[0].number_format = "DD.MM.YYYY HH:MM"
+        row[0].number_format = "dd.mm.yyyy hh:mm"
         row[3].number_format = "0.00"
 
     output = BytesIO()

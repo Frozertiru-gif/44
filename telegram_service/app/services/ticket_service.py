@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.enums import AdSource, TicketCategory, TicketStatus, TransferStatus, UserRole
-from app.db.models import DailyCounter, Ticket, User
+from app.db.models import DailyCounter, Ticket, TicketClosePhoto, User
 from app.services.audit_service import AuditService
 from app.domain.enums_mapping import parse_ad_source, parse_ticket_category
 
@@ -297,7 +297,7 @@ class TicketService:
         junior_master_id: int | None,
         junior_master_percent: Decimal | None,
         closed_comment: str,
-        closed_photo_file_id: str | None,
+        close_photos: list[dict[str, str | None]] | None = None,
         allow_override: bool = False,
     ) -> Ticket | None:
         """Freeze financial totals and payouts to ensure later disputes have a stable ledger."""
@@ -377,7 +377,6 @@ class TicketService:
                 closed_at=now,
                 closed_by_user_id=actor_id,
                 closed_comment=closed_comment,
-                closed_photo_file_id=closed_photo_file_id,
                 revenue=revenue,
                 expense=expense,
                 net_profit=payouts["net_profit"],
@@ -402,6 +401,19 @@ class TicketService:
             )
             return None
         ticket = await self.get_ticket_with_executor(session, ticket_id)
+        if ticket and close_photos:
+            session.add_all(
+                [
+                    TicketClosePhoto(
+                        ticket_id=ticket.id,
+                        file_id=item["file_id"],
+                        file_unique_id=item.get("file_unique_id"),
+                        created_at=now,
+                    )
+                    for item in close_photos
+                    if item.get("file_id")
+                ]
+            )
         if ticket:
             await self._audit.log_event(
                 session,
@@ -419,7 +431,7 @@ class TicketService:
                     if junior_master_percent is not None
                     else None,
                     "closed_comment": closed_comment,
-                    "has_close_photo": bool(closed_photo_file_id),
+                    "close_photo_count": len(close_photos or []),
                 },
             )
             await self._audit.log_event(
@@ -444,6 +456,15 @@ class TicketService:
                 },
             )
         return ticket
+
+
+    async def get_close_photos(self, session: AsyncSession, ticket_id: int) -> list[TicketClosePhoto]:
+        result = await session.execute(
+            select(TicketClosePhoto)
+            .where(TicketClosePhoto.ticket_id == ticket_id)
+            .order_by(TicketClosePhoto.id.asc())
+        )
+        return list(result.scalars().all())
 
     async def mark_transfer_sent(self, session: AsyncSession, ticket_id: int, actor_id: int) -> Ticket | None:
         now = datetime.utcnow()

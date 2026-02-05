@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     sys_admin_ids: str = ""
     finance_export_chat_id: int | None = None
     closed_report_chat_id: int = Field(validation_alias=AliasChoices("CLOSED_REPORT_CHAT_ID", "closed_report_chat_id"))
+    close_photo_limit: int = Field(default=20, validation_alias=AliasChoices("CLOSE_PHOTO_LIMIT", "close_photo_limit"))
     backup_chat_id: int | None = Field(default=None, validation_alias=AliasChoices("BACKUP_CHAT_ID", "backup_chat_id"))
     backup_dir: str = Field(
         default="/opt/master_stack/app/telegram_service/backups",

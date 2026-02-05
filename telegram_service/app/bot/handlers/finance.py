@@ -696,10 +696,12 @@ async def _handle_flow(
                 await session.commit()
                 await message.answer(f"Нет доступа. Ваша роль: {actor.role.value}")
                 return
+            progress_message = await message.answer("Готовлю отчёты…")
             tickets = await finance_service.list_tickets_for_export(session, date_range=date_range)
             transactions = await finance_service.list_manual_transactions(session, date_range=date_range)
             summary = await finance_service.project_summary(session, date_range=date_range)
             shares = await finance_service.list_active_shares(session)
+            operations = await finance_service.list_ticket_money_operations(session, date_range=date_range)
             user_map = await _build_user_map(session, tickets, transactions)
             content = _build_excel_report(
                 tickets=tickets,
@@ -709,13 +711,20 @@ async def _handle_flow(
                 date_range=date_range,
                 user_map=user_map,
             )
-            filename = f"project_report_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.xlsx"
+            ops_content = _build_money_operations_xlsx(operations=operations)
+            stamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+            filename = f"project_report_{stamp}.xlsx"
+            ops_filename = f"money_ops_{stamp}.xlsx"
             target_chat = settings.finance_export_chat_id or actor.id
             await message.bot.send_document(
                 chat_id=target_chat,
                 document=BufferedInputFile(content.getvalue(), filename=filename),
             )
-            await message.answer("Экспорт отправлен.")
+            await message.bot.send_document(
+                chat_id=target_chat,
+                document=BufferedInputFile(ops_content.getvalue(), filename=ops_filename),
+            )
+            await progress_message.edit_text("Экспорт отправлен.")
             return
 
 
@@ -952,6 +961,37 @@ def _build_excel_report(*, tickets, transactions, summary, shares, date_range, u
                 share_amount_received,
             ]
         )
+
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return output
+
+
+def _build_money_operations_xlsx(*, operations) -> BytesIO:
+    workbook = Workbook()
+    ws = workbook.active
+    ws.title = "Операции"
+    ws.append(["Дата добавления", "Категория", "Комментарий", "Сумма", "Тип"])
+
+    for op in operations:
+        ticket = op.ticket
+        comment = op.comment
+        if not comment and ticket is not None:
+            comment = ticket.closed_comment
+        ws.append(
+            [
+                op.created_at,
+                op.category_snapshot,
+                comment,
+                op.amount,
+                op.op_type.value,
+            ]
+        )
+
+    for row in ws.iter_rows(min_row=2, max_row=ws.max_row):
+        row[0].number_format = "DD.MM.YYYY HH:MM"
+        row[3].number_format = "0.00"
 
     output = BytesIO()
     workbook.save(output)

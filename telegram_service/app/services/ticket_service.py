@@ -9,8 +9,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.db.enums import AdSource, TicketCategory, TicketStatus, TransferStatus, UserRole
-from app.db.models import DailyCounter, Ticket, TicketClosePhoto, User
+from app.db.enums import AdSource, ProjectTransactionType, TicketCategory, TicketStatus, TransferStatus, UserRole
+from app.db.models import DailyCounter, Ticket, TicketClosePhoto, TicketMoneyOperation, User
 from app.services.audit_service import AuditService
 from app.domain.enums_mapping import parse_ad_source, parse_ticket_category
 
@@ -350,6 +350,9 @@ class TicketService:
             )
             return None
 
+        previous_revenue = Decimal(ticket.revenue or 0)
+        previous_expense = Decimal(ticket.expense or 0)
+
         executor_percent = await self._get_user_percent(session, executor_id, field="master_percent")
         admin_percent = await self._get_user_percent(session, admin_id, field="admin_percent")
         junior_percent = junior_master_percent or Decimal("0")
@@ -424,6 +427,16 @@ class TicketService:
                     if item.get("file_id")
                 ]
             )
+
+        await self._append_money_operations(
+            session,
+            ticket=ticket,
+            revenue=revenue,
+            expense=expense,
+            old_revenue=previous_revenue,
+            old_expense=previous_expense,
+            comment=closed_comment,
+        )
         if ticket:
             await self._audit.log_event(
                 session,
@@ -693,6 +706,49 @@ class TicketService:
         )
         result = await session.execute(statement)
         return int(result.scalar_one())
+
+    async def _append_money_operations(
+        self,
+        session: AsyncSession,
+        *,
+        ticket: Ticket | None,
+        revenue: Decimal,
+        expense: Decimal,
+        old_revenue: Decimal,
+        old_expense: Decimal,
+        comment: str | None,
+    ) -> None:
+        if ticket is None:
+            return
+
+        category_snapshot = ticket.category.value if ticket.category else "UNKNOWN"
+        income_delta = self._round_money(revenue - old_revenue)
+        expense_delta = self._round_money(expense - old_expense)
+
+        operations: list[TicketMoneyOperation] = []
+        if income_delta != Decimal("0.00"):
+            operations.append(
+                TicketMoneyOperation(
+                    ticket_id=ticket.id,
+                    op_type=ProjectTransactionType.INCOME,
+                    amount=income_delta,
+                    category_snapshot=category_snapshot,
+                    comment=comment,
+                )
+            )
+        if expense_delta != Decimal("0.00"):
+            operations.append(
+                TicketMoneyOperation(
+                    ticket_id=ticket.id,
+                    op_type=ProjectTransactionType.EXPENSE,
+                    amount=expense_delta,
+                    category_snapshot=category_snapshot,
+                    comment=comment,
+                )
+            )
+
+        if operations:
+            session.add_all(operations)
 
     async def _get_user_percent(self, session: AsyncSession, user_id: int, *, field: str) -> Decimal:
         result = await session.execute(select(User).where(User.id == user_id))

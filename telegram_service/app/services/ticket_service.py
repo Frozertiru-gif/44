@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -119,6 +119,29 @@ class TicketService:
             .limit(limit)
         )
         return list(result.scalars().all())
+
+    async def list_my_closed_page(
+        self,
+        session: AsyncSession,
+        executor_id: int,
+        *,
+        page: int,
+        page_size: int,
+    ) -> tuple[list[Ticket], int]:
+        filters = [
+            Ticket.assigned_executor_id == executor_id,
+            Ticket.status == TicketStatus.CLOSED,
+        ]
+        total_result = await session.execute(select(func.count()).select_from(Ticket).where(*filters))
+        total = int(total_result.scalar_one())
+        result = await session.execute(
+            select(Ticket)
+            .where(*filters)
+            .order_by(Ticket.closed_at.desc().nullslast(), Ticket.updated_at.desc())
+            .offset(page * page_size)
+            .limit(page_size)
+        )
+        return list(result.scalars().all()), total
 
     async def list_transfer_pending(self, session: AsyncSession, limit: int = 20) -> list[Ticket]:
         result = await session.execute(
@@ -544,6 +567,63 @@ class TicketService:
         result = await session.execute(query)
         return list(result.scalars().all())
 
+    async def list_for_actor_page(
+        self,
+        session: AsyncSession,
+        actor: User,
+        *,
+        filter_key: str,
+        page: int,
+        page_size: int,
+    ) -> tuple[list[Ticket], int]:
+        base_query = select(Ticket).order_by(Ticket.id.desc())
+        base_query = self._apply_filter_key(base_query, filter_key)
+        access_filter = self._build_access_filter(actor)
+        if access_filter is False:
+            return [], 0
+        if access_filter is not None:
+            base_query = base_query.where(access_filter)
+        total_query = select(func.count()).select_from(Ticket)
+        total_query = self._apply_filter_key(total_query, filter_key)
+        if access_filter is not None:
+            total_query = total_query.where(access_filter)
+        total_result = await session.execute(total_query)
+        total = int(total_result.scalar_one())
+        result = await session.execute(base_query.offset(page * page_size).limit(page_size))
+        return list(result.scalars().all()), total
+
+    async def search_for_actor_page(
+        self,
+        session: AsyncSession,
+        actor: User,
+        *,
+        ticket_id: int | None = None,
+        phone_digits: str | None = None,
+        page: int,
+        page_size: int,
+    ) -> tuple[list[Ticket], int]:
+        access_filter = self._build_access_filter(actor)
+        if access_filter is False:
+            return [], 0
+        base_query = select(Ticket).order_by(Ticket.id.desc())
+        filters = []
+        if ticket_id is not None:
+            filters.append(Ticket.id == ticket_id)
+        elif phone_digits:
+            phone_expr = func.regexp_replace(Ticket.client_phone, r"\D", "", "g")
+            filters.append(phone_expr.ilike(f"%{phone_digits}%"))
+        else:
+            return [], 0
+        if access_filter is not None:
+            filters.append(access_filter)
+        total_query = select(func.count()).select_from(Ticket).where(*filters)
+        total_result = await session.execute(total_query)
+        total = int(total_result.scalar_one())
+        result = await session.execute(
+            base_query.where(*filters).offset(page * page_size).limit(page_size)
+        )
+        return list(result.scalars().all()), total
+
     async def _get_user_percent(self, session: AsyncSession, user_id: int, *, field: str) -> Decimal:
         result = await session.execute(select(User).where(User.id == user_id))
         user = result.scalar_one_or_none()
@@ -612,6 +692,14 @@ class TicketService:
         }:
             return None
         return False
+
+    @staticmethod
+    def _apply_filter_key(query, filter_key: str):
+        if filter_key == "active":
+            return query.where(Ticket.status != TicketStatus.CANCELLED)
+        if filter_key == "repeat":
+            return query.where(Ticket.is_repeat.is_(True))
+        return query
 
     def _can_view_ticket(self, actor: User, ticket: Ticket) -> bool:
         if actor.role in {

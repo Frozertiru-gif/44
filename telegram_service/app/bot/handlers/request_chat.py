@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 from aiogram import Bot, F, Router
@@ -33,6 +34,7 @@ ticket_service = TicketService()
 audit_service = AuditService()
 lead_service = LeadService()
 settings = get_settings()
+logger = logging.getLogger(__name__)
 
 
 @router.callback_query(F.data.startswith("cancel:"))
@@ -115,6 +117,12 @@ async def request_take(callback: CallbackQuery, bot: Bot) -> None:
             await callback.answer("Заказ уже принят или недоступен.", show_alert=True)
             return
         await session.commit()
+
+        refreshed_ticket = await ticket_service.get_ticket_with_executor(session, ticket_id)
+        ticket = refreshed_ticket or ticket
+
+        if ticket.assigned_executor_id and not ticket.assigned_executor:
+            logger.warning("Executor profile not found for accepted ticket", extra={"ticket_id": ticket.id})
 
     await bot.send_message(settings.events_chat_id, format_ticket_event_taken(ticket))
     if callback.message:

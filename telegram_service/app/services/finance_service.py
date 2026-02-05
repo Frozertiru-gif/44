@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.db.enums import ProjectTransactionType, TicketStatus, TransferStatus
-from app.db.models import ProjectShare, ProjectTransaction, Ticket, User
+from app.db.models import ProjectShare, ProjectTransaction, Ticket, TicketMoneyOperation, User
 
 
 @dataclass(frozen=True)
@@ -211,6 +211,22 @@ class FinanceService:
             ProjectTransaction.id.asc()
         )
         query = self._apply_range(query, ProjectTransaction.occurred_at, date_range)
+        result = await session.execute(query)
+        return list(result.scalars().all())
+
+
+    async def list_ticket_money_operations(
+        self,
+        session: AsyncSession,
+        *,
+        date_range: DateRange,
+    ) -> list[TicketMoneyOperation]:
+        query = (
+            select(TicketMoneyOperation)
+            .options(selectinload(TicketMoneyOperation.ticket))
+            .order_by(TicketMoneyOperation.created_at.asc(), TicketMoneyOperation.id.asc())
+        )
+        query = self._apply_range(query, TicketMoneyOperation.created_at, date_range)
         result = await session.execute(query)
         return list(result.scalars().all())
 

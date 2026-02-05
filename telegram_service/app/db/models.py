@@ -94,6 +94,12 @@ class Ticket(Base):
         cascade="all, delete-orphan",
         order_by="TicketClosePhoto.id",
     )
+    money_operations = relationship(
+        "TicketMoneyOperation",
+        back_populates="ticket",
+        cascade="all, delete-orphan",
+        order_by="TicketMoneyOperation.id",
+    )
 
 
 class TicketClosePhoto(Base):
@@ -202,6 +208,26 @@ class ProjectTransaction(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     creator = relationship("User", foreign_keys=[created_by])
+
+
+class TicketMoneyOperation(Base):
+    __tablename__ = "ticket_money_operations"
+    __table_args__ = (
+        Index("ix_ticket_money_operations_created_at", "created_at"),
+        Index("ix_ticket_money_operations_ticket_id", "ticket_id"),
+    )
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    ticket_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("tickets.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=text("now()"))
+    op_type: Mapped[ProjectTransactionType] = mapped_column(
+        Enum(ProjectTransactionType, name="project_transaction_type"), nullable=False
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    category_snapshot: Mapped[str] = mapped_column(Text, nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    ticket = relationship("Ticket", back_populates="money_operations")
 
 
 class ProjectShare(Base):

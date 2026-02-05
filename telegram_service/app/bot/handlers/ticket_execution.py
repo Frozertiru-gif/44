@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
+from math import ceil
 
 from aiogram import Bot, F, Router
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 
 from app.bot.handlers.permissions import MASTER_ROLES, TRANSFER_CONFIRM_ROLES
 from app.bot.handlers.utils import (
@@ -26,9 +27,10 @@ from app.bot.keyboards.ticket_execution import (
     transfer_approval_actions,
     transfer_confirm_keyboard,
 )
+from app.bot.keyboards.ticket_list import worker_closed_keyboard
 from app.bot.states.ticket_close import TicketCloseStates
 from app.core.config import get_settings
-from app.db.enums import TicketStatus, TransferStatus, UserRole
+from app.db.enums import TicketStatus, TransferStatus, UserRole, ticket_category_label
 from app.db.session import async_session_factory
 from app.services.audit_service import AuditService
 from app.services.ticket_service import TicketService
@@ -192,18 +194,60 @@ async def my_closed(message: Message) -> None:
             await message.answer("У вас нет доступа к закрытым заказам.")
             return
 
-        tickets = await ticket_service.list_my_closed(session, user.id)
+        tickets, total = await ticket_service.list_my_closed_page(session, user.id, page=0, page_size=12)
 
-    if not tickets:
-        await message.answer("У вас нет закрытых заказов.")
+    await message.answer(
+        _render_worker_closed_list(tickets, total=total, page=0, page_size=12),
+        reply_markup=_worker_closed_keyboard(tickets, total=total, page=0),
+    )
+
+
+@router.callback_query(F.data.startswith("wrk:closed:"))
+async def worker_closed_pagination(callback: CallbackQuery) -> None:
+    payload = _parse_kv_payload(callback.data, prefix="wrk:closed:")
+    if "close" in callback.data:
+        if callback.message:
+            await callback.message.delete()
+        await callback.answer()
         return
-
-    for ticket in tickets:
+    if "open" in payload:
+        ticket_id = int(payload["open"])
+        async with async_session_factory() as session:
+            user = await user_service.ensure_user(
+                session,
+                callback.from_user.id,
+                callback.from_user.full_name if callback.from_user else None,
+                callback.from_user.username if callback.from_user else None,
+            )
+            ticket = await ticket_service.get_ticket_for_actor(session, ticket_id, user)
+        if not ticket:
+            await callback.answer("Нет доступа к заказу", show_alert=True)
+            return
         allow_transfer = ticket.transfer_status == TransferStatus.NOT_SENT
-        await message.answer(
+        await callback.message.answer(
             format_ticket_card(ticket),
             reply_markup=closed_ticket_actions(ticket.id, allow_transfer=allow_transfer),
         )
+        await callback.answer()
+        return
+    page = int(payload.get("page", 0))
+    async with async_session_factory() as session:
+        user = await user_service.ensure_user(
+            session,
+            callback.from_user.id,
+            callback.from_user.full_name if callback.from_user else None,
+            callback.from_user.username if callback.from_user else None,
+        )
+        if not user.is_active or user.role not in MASTER_ROLES:
+            await callback.answer("Нет доступа", show_alert=True)
+            return
+        tickets, total = await ticket_service.list_my_closed_page(session, user.id, page=page, page_size=12)
+    text = _render_worker_closed_list(tickets, total=total, page=page, page_size=12)
+    await callback.message.edit_text(
+        text,
+        reply_markup=_worker_closed_keyboard(tickets, total=total, page=page),
+    )
+    await callback.answer()
 
 
 @router.callback_query(F.data.startswith("status_progress:"))
@@ -651,3 +695,38 @@ async def transfer_reject(callback: CallbackQuery, bot: Bot) -> None:
     await callback.message.edit_text(format_ticket_card(ticket))
     await bot.send_message(events_chat_id, format_ticket_event_transfer(ticket))
     await callback.answer("Перевод отклонен")
+
+
+def _render_worker_closed_list(tickets, *, total: int, page: int, page_size: int) -> str:
+    total_pages = max(1, ceil(total / page_size)) if total else 1
+    header = f"Закрытые заявки (страница {page + 1}/{total_pages})"
+    if not tickets:
+        return f"{header}\nУ вас нет закрытых заказов."
+    lines = [header]
+    for ticket in tickets:
+        closed_at = ticket.closed_at or ticket.updated_at
+        date_value = closed_at.strftime("%d.%m.%Y") if closed_at else "-"
+        client_label = ticket.client_name or "-"
+        category = ticket_category_label(ticket.category)
+        lines.append(f"#{ticket.id} • {date_value} • {category} • {client_label}")
+    return "\n".join(lines)
+
+
+def _worker_closed_keyboard(tickets, *, total: int, page: int) -> InlineKeyboardMarkup:
+    total_pages = max(1, ceil(total / 12)) if total else 1
+    return worker_closed_keyboard(
+        ticket_ids=[ticket.id for ticket in tickets],
+        page=page,
+        total_pages=total_pages,
+    )
+
+
+def _parse_kv_payload(payload: str, *, prefix: str) -> dict[str, str]:
+    raw = payload[len(prefix):]
+    parts = [part for part in raw.split(":") if part]
+    parsed: dict[str, str] = {}
+    for part in parts:
+        if "=" in part:
+            key, value = part.split("=", 1)
+            parsed[key] = value
+    return parsed

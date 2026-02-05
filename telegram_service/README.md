@@ -23,6 +23,7 @@
 - `DB_SCHEMA` (опционально, по умолчанию `public`)
 - `REQUESTS_CHAT_ID`
 - `EVENTS_CHAT_ID`
+- `CLOSED_REPORT_CHAT_ID`
 - `SUPER_ADMIN` или `SYS_ADMIN_IDS` (минимум одно значение)
 - `WEBHOOK_SECRET` (секрет для входящих лидов)
 

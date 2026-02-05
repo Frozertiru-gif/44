@@ -14,6 +14,7 @@ from app.bot.handlers.utils import (
     format_ticket_card,
     format_ticket_event_cancelled,
     format_ticket_event_taken,
+    ticket_display_id,
 )
 from app.bot.keyboards.request_chat import executor_only_keyboard, lead_request_keyboard
 from app.bot.keyboards.ticket_wizard import category_keyboard
@@ -124,7 +125,7 @@ async def request_take(callback: CallbackQuery, bot: Bot) -> None:
     if ticket.assigned_executor_id == user.id:
         await bot.send_message(
             user.id,
-            f"Вы приняли заявку #{ticket.id}.\n\n{format_ticket_card(ticket)}",
+            f"Вы приняли заявку #{ticket_display_id(ticket)}.\n\n{format_ticket_card(ticket)}",
         )
     await callback.answer("Заказ принят")
 

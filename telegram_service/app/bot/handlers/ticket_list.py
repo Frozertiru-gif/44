@@ -149,7 +149,7 @@ async def admin_search_start(callback: CallbackQuery, state: FSMContext) -> None
             await callback.answer("Нет доступа", show_alert=True)
             return
     await state.set_state(AdminSearchStates.wait_query)
-    await callback.message.edit_text("Введите ID заявки или номер телефона.")
+    await callback.message.edit_text("Введите ID заявки, публичный номер (ДДММГГNN) или номер телефона.")
     await callback.answer()
 
 
@@ -157,10 +157,11 @@ async def admin_search_start(callback: CallbackQuery, state: FSMContext) -> None
 async def admin_search_query(message: Message, state: FSMContext) -> None:
     query = message.text.strip() if message.text else ""
     if not query:
-        await message.answer("Введите ID заявки или номер телефона.")
+        await message.answer("Введите ID заявки, публичный номер (ДДММГГNN) или номер телефона.")
         return
     digits = _normalize_phone_digits(query)
-    ticket_id = int(query) if query.isdigit() else None
+    public_id = query if query.isdigit() and len(query) == 8 else None
+    ticket_id = int(query) if query.isdigit() and len(query) != 8 else None
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
             session,
@@ -176,7 +177,8 @@ async def admin_search_query(message: Message, state: FSMContext) -> None:
             session,
             user,
             ticket_id=ticket_id,
-            phone_digits=digits if ticket_id is None else None,
+            public_id=public_id,
+            phone_digits=digits if ticket_id is None and public_id is None else None,
             page=0,
             page_size=page_size,
         )
@@ -194,7 +196,8 @@ async def admin_search_query(message: Message, state: FSMContext) -> None:
                 session,
                 user,
                 ticket_id=ticket_id,
-                phone_digits=digits if ticket_id is None else None,
+                public_id=public_id,
+                phone_digits=digits if ticket_id is None and public_id is None else None,
                 page=0,
                 page_size=page_size,
             )
@@ -215,7 +218,7 @@ async def admin_search_query(message: Message, state: FSMContext) -> None:
             search_mode=True,
         )
     await state.set_state(AdminSearchStates.results)
-    await state.update_data(search_ticket_id=ticket_id, search_phone=digits, page_size=page_size)
+    await state.update_data(search_ticket_id=ticket_id, search_public_id=public_id, search_phone=digits, page_size=page_size)
     await message.answer(text, reply_markup=keyboard)
 
 
@@ -225,9 +228,10 @@ async def admin_search_page(callback: CallbackQuery, state: FSMContext) -> None:
     page = int(payload.get("page", 0))
     data = await state.get_data()
     ticket_id = data.get("search_ticket_id")
+    public_id = data.get("search_public_id")
     phone_digits = data.get("search_phone")
     page_size = data.get("page_size", 15)
-    if ticket_id is None and not phone_digits:
+    if ticket_id is None and not public_id and not phone_digits:
         await callback.answer("Поиск не найден. Повторите поиск.", show_alert=True)
         return
     async with async_session_factory() as session:
@@ -244,6 +248,7 @@ async def admin_search_page(callback: CallbackQuery, state: FSMContext) -> None:
             session,
             user,
             ticket_id=ticket_id,
+            public_id=public_id,
             phone_digits=phone_digits,
             page=page,
             page_size=page_size,
@@ -317,7 +322,7 @@ def _render_admin_list_text(
         date_value = ticket.created_at.strftime("%d.%m.%Y") if ticket.created_at else "-"
         phone = f" • {ticket.client_phone}" if show_phone else ""
         lines.append(
-            f"#{ticket.id} • {ticket.status.value} • {date_value} • {city}{phone}"
+            f"#{ticket.public_id or ticket.id} • {ticket.status.value} • {date_value} • {city}{phone}"
         )
     return "\n".join(lines)
 

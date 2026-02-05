@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal, InvalidOperation
 from math import ceil
+import logging
 
 from aiogram import Bot, F, Router
 from aiogram.exceptions import TelegramBadRequest
@@ -47,6 +48,7 @@ user_service = UserService()
 ticket_service = TicketService()
 junior_link_service = JuniorLinkService()
 audit_service = AuditService()
+logger = logging.getLogger(__name__)
 
 
 def parse_amount(value: str) -> Decimal | None:
@@ -206,16 +208,10 @@ async def my_closed(message: Message) -> None:
     )
 
 
-@router.callback_query(F.data.startswith("wrk:closed:"))
-async def worker_closed_pagination(callback: CallbackQuery) -> None:
-    payload = _parse_kv_payload(callback.data, prefix="wrk:closed:")
-    if "close" in callback.data:
-        if callback.message:
-            await callback.message.delete()
-        await callback.answer()
-        return
-    if "open" in payload:
-        ticket_id = int(payload["open"])
+@router.callback_query(F.data.startswith("closed_open:"))
+async def worker_closed_open(callback: CallbackQuery) -> None:
+    try:
+        ticket_id = int(callback.data.split(":", 1)[1])
         async with async_session_factory() as session:
             user = await user_service.ensure_user(
                 session,
@@ -224,16 +220,32 @@ async def worker_closed_pagination(callback: CallbackQuery) -> None:
                 callback.from_user.username if callback.from_user else None,
             )
             ticket = await ticket_service.get_ticket_for_actor(session, ticket_id, user)
-        if not ticket:
+
+        if not ticket or (user.role in MASTER_ROLES and ticket.status != TicketStatus.CLOSED):
             await callback.answer("Нет доступа к заказу", show_alert=True)
             return
+
         allow_transfer = ticket.transfer_status == TransferStatus.NOT_SENT
-        await callback.message.answer(
-            format_ticket_card(ticket),
-            reply_markup=closed_ticket_actions(ticket.id, allow_transfer=allow_transfer),
-        )
+        if callback.message:
+            await callback.message.answer(
+                format_ticket_card(ticket),
+                reply_markup=closed_ticket_actions(ticket.id, allow_transfer=allow_transfer),
+            )
+        await callback.answer()
+    except Exception:
+        logger.exception("Failed to open closed ticket from callback", extra={"callback_data": callback.data})
+        await callback.answer("Не удалось открыть заявку", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("wrk:closed:"))
+async def worker_closed_pagination(callback: CallbackQuery) -> None:
+    payload = _parse_kv_payload(callback.data, prefix="wrk:closed:")
+    if "close" in callback.data:
+        if callback.message:
+            await callback.message.delete()
         await callback.answer()
         return
+
     page = int(payload.get("page", 0))
     async with async_session_factory() as session:
         user = await user_service.ensure_user(
@@ -931,7 +943,7 @@ def _render_worker_closed_list(tickets, *, total: int, page: int, page_size: int
 def _worker_closed_keyboard(tickets, *, total: int, page: int) -> InlineKeyboardMarkup:
     total_pages = max(1, ceil(total / 12)) if total else 1
     return worker_closed_keyboard(
-        ticket_ids=[ticket.id for ticket in tickets],
+        ticket_buttons=[(ticket.id, ticket_display_id(ticket)) for ticket in tickets],
         page=page,
         total_pages=total_pages,
     )

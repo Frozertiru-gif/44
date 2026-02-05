@@ -46,13 +46,13 @@ def ticket_list_keyboard(
 
 def worker_closed_keyboard(
     *,
-    ticket_ids: list[int],
+    ticket_buttons: list[tuple[int, str]],
     page: int,
     total_pages: int,
 ) -> InlineKeyboardMarkup:
     rows = [
-        [InlineKeyboardButton(text=f"Открыть #{ticket_id}", callback_data=f"wrk:closed:open={ticket_id}")]
-        for ticket_id in ticket_ids
+        [InlineKeyboardButton(text=f"Открыть #{ticket_label}", callback_data=f"closed_open:{ticket_id}")]
+        for ticket_id, ticket_label in ticket_buttons
     ]
     nav: list[InlineKeyboardButton] = []
     if page > 0:

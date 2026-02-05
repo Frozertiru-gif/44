@@ -8,6 +8,7 @@ import { Modal } from "@/src/components/Modal";
 import { CategoryGrid } from "@/src/components/CategoryGrid";
 import { IssuesSection } from "@/src/components/IssuesSection";
 import { track } from "@/src/lib/track";
+import { getGeoNameInPrepositional } from "@/src/content/geoCopy";
 
 type LeadContext = {
   categoryId?: IssueCategory["id"];
@@ -25,10 +26,11 @@ type SeoCopy = {
 
 type LandingPageProps = {
   geoName?: string;
+  geoSlug?: string;
   seoCopy?: SeoCopy;
 };
 
-export function LandingPage({ geoName, seoCopy }: LandingPageProps) {
+export function LandingPage({ geoName, geoSlug, seoCopy }: LandingPageProps) {
   const [isFormOpen, setFormOpen] = useState(false);
   const [isMessengerOpen, setMessengerOpen] = useState(false);
   const [activeCategoryId, setActiveCategoryId] = useState<IssueCategory["id"] | null>(null);
@@ -82,6 +84,9 @@ export function LandingPage({ geoName, seoCopy }: LandingPageProps) {
   };
 
   const currentGeoName = geoName ?? siteContent.city;
+  const currentGeoNameInPrepositional = geoName && geoSlug
+    ? getGeoNameInPrepositional(currentGeoName, geoSlug)
+    : currentGeoName;
   const contactBadges = [currentGeoName, ...siteContent.areas].filter(
     (value, index, array) => array.indexOf(value) === index
   ).slice(0, 3);
@@ -122,10 +127,10 @@ export function LandingPage({ geoName, seoCopy }: LandingPageProps) {
         <section className="section" id="hero">
           <div className="container hero">
             <div>
-              <h1>{geoName ? `Ремонт техники на дому в ${currentGeoName}` : siteContent.hero.title}</h1>
+              <h1>{geoName ? `Ремонт техники в ${currentGeoNameInPrepositional}` : siteContent.hero.title}</h1>
               <p>
                 {geoName
-                  ? `Частный мастер с выездом в ${currentGeoName}. Диагностика на месте, согласование цены до ремонта и понятные сроки.`
+                  ? `Частный мастер с выездом в ${currentGeoNameInPrepositional}. Диагностика на месте, согласование цены до ремонта и понятные сроки.`
                   : siteContent.hero.subtitle}
               </p>
               <ul>
@@ -151,10 +156,10 @@ export function LandingPage({ geoName, seoCopy }: LandingPageProps) {
             </div>
             <div className="hero-card">
               <div>
-                <h3>Работаю в {currentGeoName}</h3>
+                <h3>Работаю в {currentGeoNameInPrepositional}</h3>
                 <p>
                   {geoName
-                    ? `Выезд мастера в ${currentGeoName} и ближайшие населённые пункты`
+                    ? `Выезд мастера в ${currentGeoNameInPrepositional} и ближайшие населённые пункты`
                     : siteContent.serviceArea.title}
                 </p>
                 {siteContent.serviceArea.subtitle ? (
@@ -185,7 +190,7 @@ export function LandingPage({ geoName, seoCopy }: LandingPageProps) {
         {seoCopy ? (
           <section className="section" id="geo-info">
             <div className="container">
-              <h2>Ремонт техники в {currentGeoName}</h2>
+              <h2>Ремонт техники в {currentGeoNameInPrepositional}</h2>
               <p>{seoCopy.titleLead}</p>
               <ul>
                 {seoCopy.bullets.map((bullet) => (

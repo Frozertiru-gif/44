@@ -1,8 +1,12 @@
-import type { Metadata } from "next";
-import { siteContent, serviceAreaLocalities } from "@/src/content/site";
+import type { Metadata, Viewport } from "next";
+import { siteContent } from "@/src/content/site";
+import { GEO } from "@/src/content/geo";
 import "./globals.css";
 
+const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "https://master-nt.space";
+
 export const metadata: Metadata = {
+  metadataBase: new URL(siteUrl),
   title: "Ремонт техники на дому — частный мастер",
   description:
     "Ремонт компьютеров, телевизоров, принтеров и телефонов на дому. Быстрый выезд и понятная цена.",
@@ -14,11 +18,12 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: "/favicon.svg"
-  },
-  viewport: {
-    width: "device-width",
-    initialScale: 1
   }
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1
 };
 
 export default function RootLayout({
@@ -36,7 +41,10 @@ export default function RootLayout({
       addressLocality: siteContent.city,
       addressCountry: "RU"
     },
-    areaServed: serviceAreaLocalities
+    areaServed: GEO.map((geo) => ({
+      "@type": geo.kind === "city" ? "City" : "Place",
+      name: geo.name
+    }))
   };
 
   return (

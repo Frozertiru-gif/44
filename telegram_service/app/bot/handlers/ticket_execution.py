@@ -4,6 +4,7 @@ from decimal import Decimal, InvalidOperation
 from math import ceil
 
 from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InputMediaPhoto, Message
 
@@ -470,23 +471,45 @@ async def close_comment(message: Message, state: FSMContext) -> None:
     if not comment:
         await message.answer("Комментарий обязателен. Введите текст или '-' .")
         return
-    await state.update_data(closed_comment=comment)
-    await state.set_state(TicketCloseStates.photo)
-    await message.answer(
-        "Отправьте фото (можно несколько). Когда закончите — нажмите «Готово». Можно пропустить.",
+    status_message = await message.answer(
+        "Фото добавлено: 0. Отправьте ещё или нажмите «Готово».",
         reply_markup=close_photo_actions_keyboard(),
     )
+    await state.update_data(
+        closed_comment=comment,
+        close_photos=[],
+        close_photo_unique_ids=[],
+        photos_count=0,
+        photo_file_ids=[],
+        photos_status_chat_id=status_message.chat.id,
+        photos_status_message_id=status_message.message_id,
+        photos_status_fallback_chat_id=status_message.chat.id,
+    )
+    await state.set_state(TicketCloseStates.photo)
 
 
 @router.callback_query(TicketCloseStates.photo, F.data == "close_photo_skip")
 async def close_photo_skip(callback: CallbackQuery, state: FSMContext) -> None:
-    await state.update_data(close_photos=[], close_photo_unique_ids=[])
+    await state.update_data(close_photos=[], close_photo_unique_ids=[], photos_count=0, photo_file_ids=[])
+    await update_photos_status_message(
+        state,
+        callback.bot,
+        text="Фото пропущено. Закрываю заявку…",
+    )
     await _send_close_confirmation(callback.message, state)
     await callback.answer()
 
 
 @router.callback_query(TicketCloseStates.photo, F.data == "close_photo_done")
 async def close_photo_done(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    photos = data.get("close_photos")
+    photo_count = len(photos) if isinstance(photos, list) else 0
+    await update_photos_status_message(
+        state,
+        callback.bot,
+        text=f"✅ Фото принято: {photo_count}. Закрываю заявку…",
+    )
     await _send_close_confirmation(callback.message, state)
     await callback.answer()
 
@@ -509,7 +532,7 @@ async def close_photo_from_photo(message: Message, state: FSMContext) -> None:
 async def close_photo_from_document(message: Message, state: FSMContext) -> None:
     doc = message.document
     if not doc or not (doc.mime_type or "").startswith("image/"):
-        await message.answer("Нужен файл изображения. Отправьте фото или нажмите «Готово».")
+        await update_photos_status_message(state, message.bot, suffix="Нужен файл изображения.")
         return
     await _append_close_photo(
         message,
@@ -520,8 +543,8 @@ async def close_photo_from_document(message: Message, state: FSMContext) -> None
 
 
 @router.message(TicketCloseStates.photo)
-async def close_photo_invalid(message: Message) -> None:
-    await message.answer("Отправьте фото/изображение или нажмите «Готово»/«Пропустить».")
+async def close_photo_invalid(message: Message, state: FSMContext) -> None:
+    await update_photos_status_message(state, message.bot, suffix="Нужен файл изображения.")
 
 
 async def _append_close_photo(message: Message, state: FSMContext, *, file_id: str, file_unique_id: str | None) -> None:
@@ -535,7 +558,7 @@ async def _append_close_photo(message: Message, state: FSMContext, *, file_id: s
 
     limit = max(1, settings.close_photo_limit)
     if len(photos) >= limit:
-        await message.answer(f"Слишком много фото. Максимум: {limit}.")
+        await update_photos_status_message(state, message.bot, suffix=f"Слишком много фото. Максимум: {limit}.")
         return
 
     if file_unique_id and file_unique_id in unique_ids:
@@ -545,10 +568,61 @@ async def _append_close_photo(message: Message, state: FSMContext, *, file_id: s
     if file_unique_id:
         unique_ids.append(file_unique_id)
 
-    await state.update_data(close_photos=photos, close_photo_unique_ids=unique_ids)
-    await message.answer(
-        f"Фото добавлено ({len(photos)}). Отправьте ещё или нажмите «Готово».",
-        reply_markup=close_photo_actions_keyboard(),
+    photo_file_ids = [item.get("file_id") for item in photos if isinstance(item, dict) and item.get("file_id")]
+    photos_count = len(photos)
+
+    await state.update_data(
+        close_photos=photos,
+        close_photo_unique_ids=unique_ids,
+        photos_count=photos_count,
+        photo_file_ids=photo_file_ids,
+    )
+    await update_photos_status_message(state, message.bot, count=photos_count)
+
+
+async def update_photos_status_message(
+    state: FSMContext,
+    bot: Bot,
+    *,
+    count: int | None = None,
+    suffix: str | None = None,
+    text: str | None = None,
+) -> None:
+    data = await state.get_data()
+    if text is None:
+        if count is None:
+            raw_count = data.get("photos_count")
+            count = raw_count if isinstance(raw_count, int) else 0
+        text = f"Фото добавлено: {count}. Отправьте ещё или нажмите «Готово»."
+        if suffix:
+            text = f"{text}\n\n{suffix}"
+
+    chat_id = data.get("photos_status_chat_id")
+    message_id = data.get("photos_status_message_id")
+    keyboard = close_photo_actions_keyboard()
+    if isinstance(chat_id, int) and isinstance(message_id, int):
+        try:
+            await bot.edit_message_text(text=text, chat_id=chat_id, message_id=message_id, reply_markup=keyboard)
+            return
+        except TelegramBadRequest as exc:
+            if "message is not modified" in str(exc).lower():
+                return
+
+    fallback_chat_id = data.get("photos_status_fallback_chat_id")
+    if not isinstance(fallback_chat_id, int):
+        fallback_chat_id = chat_id if isinstance(chat_id, int) else None
+    if not isinstance(fallback_chat_id, int):
+        return
+
+    status_message = await bot.send_message(
+        chat_id=fallback_chat_id,
+        text=text,
+        reply_markup=keyboard,
+    )
+    await state.update_data(
+        photos_status_chat_id=status_message.chat.id,
+        photos_status_message_id=status_message.message_id,
+        photos_status_fallback_chat_id=status_message.chat.id,
     )
 
 

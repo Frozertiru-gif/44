@@ -82,19 +82,52 @@ npm run start
 
 ## Резервное копирование PostgreSQL (Docker)
 
+Бэкап выполняется shell-скриптом `telegram_service/scripts/backup_db.sh` (через `pg_dump` + `gpg`) и может опционально отправляться в Telegram-чат как `document`.
+
 ### Подготовка конфигурации
-Скопируйте пример файла переменных и заполните пароль шифрования:
+В корне репозитория:
 ```bash
-cp /opt/master_stack/app/telegram_service/scripts/backup.env.example /opt/master_stack/app/telegram_service/scripts/backup.env
+cp telegram_service/scripts/backup.env.example telegram_service/scripts/backup.env
 ```
+
+Пример `telegram_service/scripts/backup.env` на сервере:
+```bash
+BACKUP_PASSPHRASE=... # обязательно
+DB_CONTAINER=telegram_service-db-1
+DB_HOST=db
+DB_PORT=5432
+DB_NAME=telegram_service
+DB_USER=telegram
+PGPASSWORD=...
+BACKUP_DIR=/opt/backups/telegram_service
+RETENTION_KEEP=14
+
+# Опциональная отправка в Telegram
+TG_BOT_TOKEN=
+TG_BACKUP_CHAT_ID=
+TG_SEND_AS_DOCUMENT=1
+TG_CAPTION_PREFIX=🗄 telegram_service
+```
+
+Если `TG_BOT_TOKEN` и `TG_BACKUP_CHAT_ID` не заданы, скрипт работает в режиме только локального бэкапа (как раньше).
 
 ### Ручной запуск бэкапа
 ```bash
-set -a; source /opt/master_stack/app/telegram_service/scripts/backup.env; set +a; /opt/master_stack/app/telegram_service/scripts/backup_db.sh
+cd telegram_service
+set -a && . scripts/backup.env && set +a
+./scripts/backup_db.sh
 ```
 
-### Cron (пример)
-Запускайте с абсолютными путями:
+### Как подготовить Telegram-чат для бэкапов
+1. Создайте отдельную группу/чат для бэкапов.
+2. Добавьте в неё бота и дайте ему права администратора (для каналов — право публикации сообщений).
+3. Отправьте любое сообщение в этот чат.
+4. Узнайте `chat_id` через API:
+   `https://api.telegram.org/bot<TG_BOT_TOKEN>/getUpdates`
+5. Возьмите `message.chat.id` (часто вида `-100...`) и сохраните в `TG_BACKUP_CHAT_ID`.
+
+### Cron (эталон)
+Ежедневный запуск в `03:15` с переходом в корень проекта, чтобы относительные пути работали корректно:
 ```cron
-15 3 * * * set -a && . /opt/master_stack/app/telegram_service/scripts/backup.env && set +a && /opt/master_stack/app/telegram_service/scripts/backup_db.sh >> /var/log/backup_db.log 2>&1
+15 3 * * * cd /opt/master_stack/app && set -a && . telegram_service/scripts/backup.env && set +a && ./telegram_service/scripts/backup_db.sh >> /var/log/backup_db.log 2>&1
 ```

@@ -3,6 +3,7 @@ from __future__ import annotations
 from uuid import UUID
 
 from aiogram import Bot, F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
 from aiogram.types import CallbackQuery
@@ -14,7 +15,7 @@ from app.bot.handlers.utils import (
     format_ticket_event_cancelled,
     format_ticket_event_taken,
 )
-from app.bot.keyboards.request_chat import lead_request_keyboard
+from app.bot.keyboards.request_chat import executor_only_keyboard, lead_request_keyboard
 from app.bot.keyboards.ticket_wizard import category_keyboard
 from app.bot.states.ticket_create import TicketCreateStates
 from app.core.config import get_settings
@@ -115,6 +116,11 @@ async def request_take(callback: CallbackQuery, bot: Bot) -> None:
         await session.commit()
 
     await bot.send_message(settings.events_chat_id, format_ticket_event_taken(ticket))
+    if callback.message:
+        try:
+            await callback.message.edit_reply_markup(reply_markup=executor_only_keyboard(ticket.assigned_executor))
+        except TelegramBadRequest:
+            pass
     if ticket.assigned_executor_id == user.id:
         await bot.send_message(
             user.id,

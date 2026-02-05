@@ -194,22 +194,22 @@ async def ticket_schedule_choice(message: Message, state: FSMContext) -> None:
 
     if text in {"Сегодня", "Завтра"}:
         target_date = date.today() if text == "Сегодня" else date.today() + timedelta(days=1)
-        preferred_date_dm = target_date.strftime("%d:%m")
+        preferred_date_dm = target_date.strftime("%d.%m")
     else:
-        match = re.fullmatch(r"\d{2}:\d{2}", text.strip())
+        match = re.fullmatch(r"\d{2}\.\d{2}", text.strip())
         if not match:
-            await message.answer("Введите дату в формате дд:мм (например 04:02).")
+            await message.answer("Введите дату в формате дд.мм (например 09.02).")
             return
-        day, month = map(int, text.split(":", maxsplit=1))
+        day, month = map(int, text.split(".", maxsplit=1))
         if not (1 <= day <= 31 and 1 <= month <= 12):
-            await message.answer("Введите дату в формате дд:мм (например 04:02).")
+            await message.answer("Введите дату в формате дд.мм (например 09.02).")
             return
         try:
             target_date = date(date.today().year, month, day)
         except ValueError:
-            await message.answer("Введите дату в формате дд:мм (например 04:02).")
+            await message.answer("Введите дату в формате дд.мм (например 09.02).")
             return
-        preferred_date_dm = text
+        preferred_date_dm = text.strip()
 
     await state.update_data(schedule_date=target_date)
     await state.update_data(preferred_date_dm=preferred_date_dm)
@@ -233,7 +233,7 @@ async def ticket_schedule_time(message: Message, state: FSMContext) -> None:
 
     await state.update_data(scheduled_at=schedule)
     if not _is_value_set(data, "preferred_date_dm"):
-        await state.update_data(preferred_date_dm=schedule.strftime("%d:%m"))
+        await state.update_data(preferred_date_dm=schedule.strftime("%d.%m"))
     await _advance_after_schedule(message, state)
 
 
@@ -325,7 +325,7 @@ async def ticket_confirm(callback: CallbackQuery, state: FSMContext, bot: Bot) -
         await callback.answer("Укажите удобную дату.", show_alert=True)
         return
     if scheduled_at and not preferred_date_dm:
-        preferred_date_dm = scheduled_at.strftime("%d:%m")
+        preferred_date_dm = scheduled_at.strftime("%d.%m")
     lead_id = data.get("lead_id")
     lead_message_chat_id = data.get("lead_message_chat_id")
     lead_message_id = data.get("lead_message_id")

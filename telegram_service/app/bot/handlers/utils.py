@@ -49,7 +49,7 @@ def parse_time(value: str, target_date: date) -> datetime | None:
 
 def format_ticket_schedule(preferred_date_dm: str | None, scheduled_at: datetime | None) -> str:
     if scheduled_at:
-        date_part = preferred_date_dm or scheduled_at.strftime("%d:%m")
+        date_part = preferred_date_dm or scheduled_at.strftime("%d.%m")
         return f"{date_part} {scheduled_at.strftime('%H:%M')}"
     if preferred_date_dm:
         return preferred_date_dm
@@ -179,20 +179,44 @@ def format_user_label(user: User | None) -> str:
     return f"ID {user.id}"
 
 
+def format_executor_link(user: User | None) -> tuple[str, str | None]:
+    if not user:
+        return "—", None
+
+    if user.display_name:
+        label = user.display_name
+    elif user.username:
+        label = f"@{user.username}"
+    else:
+        label = f"ID {user.id}"
+
+    if user.username:
+        return label, f"https://t.me/{user.username}"
+    return label, f"tg://user?id={user.id}"
+
+
 def format_ticket_event_taken(ticket: Ticket) -> str:
-    executor_label = format_user_label(ticket.assigned_executor)
-    return f"✅ Заявка #{ticket.id} принята: исполнитель {executor_label}"
+    executor_label, executor_url = format_executor_link(ticket.assigned_executor)
+    executor_value = f"{executor_label} ({executor_url})" if executor_url else executor_label
+    return f"✅ Заявка #{ticket.id} принята: исполнитель — {executor_value}"
 
 
 def format_ticket_event_status(ticket: Ticket) -> str:
-    return f"🛠 Заявка #{ticket.id} статус: {ticket.status.value}"
+    executor_label, executor_url = format_executor_link(ticket.assigned_executor)
+    executor_value = f"{executor_label} ({executor_url})" if executor_url else executor_label
+    return f"🛠 Заявка #{ticket.id} статус: {ticket.status.value} (исполнитель — {executor_value})"
 
 
 def format_ticket_event_closed(ticket: Ticket) -> str:
     revenue = ticket.revenue if ticket.revenue is not None else "-"
     expense = ticket.expense if ticket.expense is not None else "-"
     profit = ticket.net_profit if ticket.net_profit is not None else "-"
-    return f"📦 Заявка #{ticket.id} закрыта: доход={revenue}, расход={expense}, чистая={profit}"
+    executor_label, executor_url = format_executor_link(ticket.assigned_executor)
+    executor_value = f"{executor_label} ({executor_url})" if executor_url else executor_label
+    return (
+        f"📦 Заявка #{ticket.id} закрыта: доход={revenue}, расход={expense}, чистая={profit} "
+        f"(исполнитель — {executor_value})"
+    )
 
 
 def format_ticket_event_transfer(ticket: Ticket) -> str:

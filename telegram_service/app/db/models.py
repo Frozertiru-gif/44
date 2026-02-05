@@ -45,6 +45,7 @@ class Ticket(Base):
     client_age_estimate: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     client_phone: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     client_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    address_details: Mapped[str | None] = mapped_column(Text, nullable=True)
     problem_text: Mapped[str] = mapped_column(Text, nullable=False)
     special_note: Mapped[str | None] = mapped_column(Text, nullable=True)
     ad_source: Mapped[AdSource] = mapped_column(Enum(AdSource, name="ad_source"), default=AdSource.UNKNOWN)

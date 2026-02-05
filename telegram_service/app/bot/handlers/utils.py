@@ -68,59 +68,65 @@ def format_ticket_schedule(preferred_date_dm: str | None, scheduled_at: datetime
     return "Не указано"
 
 
-def format_ticket_card(ticket: Ticket) -> str:
+def _format_client_line(name: str | None, age: int | None) -> str:
+    if name or age is not None:
+        name_value = name or "Не указано"
+        age_value = age if age is not None else "?"
+        return f"{name_value} ({age_value})"
+    return "-"
+
+
+def format_ticket_text(ticket: Ticket, *, private: bool) -> str:
     repeat_label = "⚠️ ПОВТОР\n" if ticket.is_repeat else ""
     scheduled = format_ticket_schedule(ticket.preferred_date_dm, ticket.scheduled_at)
-    client_line = "-"
-    if ticket.client_name or ticket.client_age_estimate:
-        name = ticket.client_name or "Не указано"
-        age = ticket.client_age_estimate if ticket.client_age_estimate is not None else "?"
-        client_line = f"{name} ({age})"
-    note = ticket.special_note or "-"
-    ad = ad_source_label(ticket.ad_source)
-    executor = format_executor_label(ticket)
-    junior_master = format_junior_master_label(ticket)
-    transfer = format_transfer_label(ticket)
-    finance = format_finance_block(ticket)
-    return (
-        f"{repeat_label}Заказ #{ticket_display_id(ticket)}\n"
-        f"Категория: {ticket_category_label(ticket.category)}\n"
-        f"Телефон: {ticket.client_phone}\n"
-        f"Адрес: {ticket.client_address or '-'}\n"
-        f"Удобное время: {scheduled}\n"
-        f"Клиент: {client_line}\n"
-        f"Проблема: {ticket.problem_text}\n"
-        f"Пометки: {note}\n"
-        f"Реклама: {ad}\n"
-        f"Статус: {ticket.status.value}"
-        f"{executor}"
-        f"{junior_master}"
-        f"{finance}"
-        f"{transfer}"
-    )
-
-
-def format_ticket_public(ticket: Ticket) -> str:
-    repeat_label = "⚠️ ПОВТОР\n" if ticket.is_repeat else ""
-    scheduled = ticket.scheduled_at.strftime("%Y-%m-%d %H:%M") if ticket.scheduled_at else "Не указано"
-    client_line = "-"
-    if ticket.client_name or ticket.client_age_estimate:
-        name = ticket.client_name or "Не указано"
-        age = ticket.client_age_estimate if ticket.client_age_estimate is not None else "?"
-        client_line = f"{name} ({age})"
     note = ticket.special_note or "-"
     ad = ad_source_label(ticket.ad_source)
     status = ticket.status.value if ticket.status else "-"
-    return (
-        f"{repeat_label}Заказ #{ticket_display_id(ticket)}\n"
-        f"Категория: {ticket_category_label(ticket.category)}\n"
-        f"Удобное время: {scheduled}\n"
-        f"Клиент: {client_line}\n"
-        f"Проблема: {ticket.problem_text}\n"
-        f"Пометки: {note}\n"
-        f"Реклама: {ad}\n"
-        f"Статус: {status}"
-    )
+
+    lines = [
+        f"{repeat_label}Заказ #{ticket_display_id(ticket)}".rstrip(),
+        f"Категория: {ticket_category_label(ticket.category)}",
+        f"Удобное время: {scheduled}",
+    ]
+
+    if private:
+        lines.extend([
+            f"Телефон: {ticket.client_phone}",
+            f"Адрес: {ticket.client_address or '-'}",
+            f"Квартира / подъезд / этаж: {ticket.address_details or '-'}",
+            f"Клиент: {_format_client_line(ticket.client_name, ticket.client_age_estimate)}",
+        ])
+    else:
+        lines.append(f"Адрес: {ticket.client_address or '-'}")
+
+    lines.extend([
+        f"Проблема: {ticket.problem_text}",
+        f"Пометки: {note}",
+        f"Реклама: {ad}",
+        f"Статус: {status}",
+    ])
+
+    if private:
+        lines.extend(
+            part
+            for part in [
+                format_executor_label(ticket).lstrip("\n"),
+                format_junior_master_label(ticket).lstrip("\n"),
+                format_finance_block(ticket).lstrip("\n"),
+                format_transfer_label(ticket).lstrip("\n"),
+            ]
+            if part
+        )
+
+    return "\n".join(lines)
+
+
+def format_ticket_card(ticket: Ticket) -> str:
+    return format_ticket_text(ticket, private=True)
+
+
+def format_ticket_public(ticket: Ticket) -> str:
+    return format_ticket_text(ticket, private=False)
 
 
 def format_ticket_preview(data: dict) -> str:
@@ -142,6 +148,7 @@ def format_ticket_preview(data: dict) -> str:
         f"Категория: {ticket_category_label(data.get('category'))}\n"
         f"Телефон: {data.get('client_phone')}\n"
         f"Адрес: {data.get('client_address') or '-'}\n"
+        f"Квартира / подъезд / этаж: {data.get('address_details') or '-'}\n"
         f"Удобное время: {scheduled}\n"
         f"Клиент: {client_line}\n"
         f"Проблема: {data.get('problem_text')}\n"

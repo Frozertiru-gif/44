@@ -20,6 +20,10 @@ services:
       context: .
     env_file:
       - .env
+    environment:
+      BACKUP_DIR: ${BACKUP_DIR:-/app/backups}
+      BACKUP_ENV_PATH: ${BACKUP_ENV_PATH:-/app/scripts/backup.env}
+      BACKUP_SCRIPT_PATH: ${BACKUP_SCRIPT_PATH:-/app/scripts/backup_db.sh}
     depends_on:
       migrations:
         condition: service_completed_successfully

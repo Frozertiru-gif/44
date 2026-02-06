@@ -7,6 +7,7 @@ import { MessengerButtons } from "@/src/components/MessengerButtons";
 import { Modal } from "@/src/components/Modal";
 import { CategoryGrid } from "@/src/components/CategoryGrid";
 import { IssuesSection } from "@/src/components/IssuesSection";
+import { ServicesGrid } from "@/src/components/ServicesGrid";
 import { track } from "@/src/lib/track";
 import { getGeoNameInPrepositional } from "@/src/content/geoCopy";
 
@@ -192,11 +193,7 @@ export function LandingPage({ geoName, geoSlug, seoCopy }: LandingPageProps) {
             <div className="container">
               <h2>Ремонт техники в {currentGeoNameInPrepositional}</h2>
               <p>{seoCopy.titleLead}</p>
-              <ul>
-                {seoCopy.bullets.map((bullet) => (
-                  <li key={bullet}>• {bullet}</li>
-                ))}
-              </ul>
+              <ServicesGrid items={seoCopy.bullets} title="Что ремонтирую" />
               {seoCopy.body.map((paragraph) => (
                 <p key={paragraph}>{paragraph}</p>
               ))}
